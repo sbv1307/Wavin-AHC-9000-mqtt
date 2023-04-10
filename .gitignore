@@ -1,0 +1,15 @@
+Firmware/.pioenvs
+Firmware/.piolibdeps
+Firmware/.vscode/*
+Firmware/lib/*
+Firmware/.travis.yml
+
+# temporary excludes
+Library/*
+*.dat
+*.dpl
+*.kicad_pcb
+*.sch
+fp-lib-table
+jlcpcb/*
+sym-lib-table
