@@ -1,8 +1,32 @@
 # **Wavin-AHC-9000-mqtt**
 
+Git clone of https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git but restructured for Firmware (FW), Software (SW) and Hardware (HW).
+
+## **Currently under development!!!**
+
+Project planned to be:
+
+A simple Esp8266 mqtt interface for Wavin AHC-9000/Jablotron AC-116, with the goal of being able to control this heating controller from [OpenHAP](https://www.openhab.org) automation software for your home.
+
+The project include a [Kicad](https://www.kicad.org/) PCB layout and a mosquitto broker based on [eclipse-mosquitto](https://hub.docker.com/_/eclipse-mosquitto).
+
+## **Esp8266 mqtt interface**
+
+See Firmware markdown [here](Firmware/README.md).
+
+## **Mosquitto broker**
+
+## **Requirements**
+
+- Raspberry Pi model B v1.2. Installed with Raspberry Pi OS Lite (32-bit) <span id="a1">[[1]](#f1)</span>.
+- Internet access.
+- Raspberry Pi hardened <span id="a2">[[2]](#f2)</span>.
+- Docker Engin and Docker Compose installed <span id="a3">[[3]](#f3)</span>.
+
+
 ### **Create docker-compose file**
 
-In folder `energiAnalyse` create file `docker-compose.yaml`
+In folder `Wavin-AHC-9000-mqtt` create file `docker-compose.yaml`
 
 ```bash
 vi docker-compose.yaml
@@ -73,3 +97,13 @@ docker compose config
 docker-compose up -d
 ```
 
+## Credits
+- dkjonas/Wavin-AHC-9000-mqtt
+
+#### **Footnotes**
+=======
+###### 1. <span id="f1"></span> See document: [Setting up and configure Raspberry Pi 3 MODEL B+ for the Docker Traefik router project](./docs/SettingUpRaspberryPi.md). [$\hookleftarrow$](#a1)
+
+###### 2. <span id="f2"></span> See document [Hardening Raspberry Pi 3 MODEL B+ for the Docker Traefik router project](./docs/HardeningRaspberryPi.md)[$\hookleftarrow$](#a2)
+
+###### 3. <span id="f3"></span> See document [Install Docker Engin and Docker Compose](./docs/InstallDockerEnginAndCompose.md)[$\hookleftarrow$](#a3)

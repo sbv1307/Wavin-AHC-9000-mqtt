@@ -4,6 +4,8 @@ Firmware/.vscode/*
 Firmware/lib/*
 Firmware/.travis.yml
 
+Developer/*
+
 # temporary excludes
 Library/*
 *.dat
