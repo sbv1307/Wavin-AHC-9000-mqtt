@@ -1,21 +1,29 @@
 # Install Docker Engin and Docker Compose
 
-## **Log in as routermgr and run the commands below:**
+## **Log in as mqttmgr and run the commands below:**
 
 ## remove any previously docker installation.
 ```bash
 sudo apt-get remove docker docker-engine docker.io containerd runc
-```
+````
 
+Expected output:
+
+````bash
+Reading package lists... Done
+Building dependency tree... Done
+Reading state information... Done
+E: Unable to locate package docker-engine
+````
 
 ## Get docker engine and run install schript
 ```bash
 curl -sSL https://get.docker.com | sh
 ```
 
-## Enable user ”routermgr” to run docker withour using sudo
+## Enable user ”mqttmgr” to run docker withour using sudo
 ```bash
-sudo usermod -aG docker routermgr
+sudo usermod -aG docker mqttmgr
 ```
 
 ## **Log out and log in again to run docker commands withour sudo**
