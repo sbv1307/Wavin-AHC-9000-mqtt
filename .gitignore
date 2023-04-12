@@ -5,6 +5,7 @@ Firmware/lib/*
 Firmware/.travis.yml
 Firmware/.pio/*
 
+
 Developer/*
 
 # temporary excludes
@@ -16,3 +17,5 @@ Library/*
 fp-lib-table
 jlcpcb/*
 sym-lib-table
+Firmware/src/PrivateConfig.h
+

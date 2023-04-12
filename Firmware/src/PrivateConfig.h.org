@@ -1,6 +1,6 @@
 #include <ESP8266WiFi.h>
 
-const String   WIFI_SSID = "";         // wifi ssid
+const String   WIFI_SSID = "Enter wireless SSID here";         // wifi ssid
 const String   WIFI_PASS = "Enter wireless password here";     // wifi password
 
 const String   MQTT_SERVER = "Enter mqtt server address here"; // mqtt server address without port number
