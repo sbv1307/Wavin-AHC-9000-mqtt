@@ -6,21 +6,22 @@ version: '3.8'
 
 services:
   mosquitto-mqtt:
-  container_name: mosquitto-mqtt
-  image: eclipse-mosquitto:2
-  restart: always
-  command: mosquitto -c /mosquitto-no-auth.conf
-  ports:
-    - 1883:1883
-  volumes:
-    - mosquitto-conf:/mosquitto/config
-    - mosquitto-data:/mosquitto/data
-    - mosquitto-log:/mosquitto/log
+    container_name: mosquitto-mqtt
+    image: eclipse-mosquitto:2
+    restart: always
+    command: mosquitto -c /mosquitto-no-auth.conf
+    ports:
+      - 1883:1883
+    volumes:
+      - /home/pi/mosquitto/config:/mosquitto/config
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
 
 volumes:
-  mosquitto-conf:
-    name: mosquitto-conf
   mosquitto-data:
     name: mosquitto-data
   mosquitto-log:
     name: mosquitto-log
+
+#  mosquitto-conf:
+#    name: mosquitto-conf

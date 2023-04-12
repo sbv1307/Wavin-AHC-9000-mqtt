@@ -3,6 +3,7 @@ Firmware/.piolibdeps
 Firmware/.vscode/*
 Firmware/lib/*
 Firmware/.travis.yml
+Firmware/.pio/*
 
 Developer/*
 

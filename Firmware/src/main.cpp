@@ -20,6 +20,8 @@ const String   MQTT_SUFFIX_OUTPUT       = "/output";
 const String   MQTT_VALUE_MODE_STANDBY  = "off";
 const String   MQTT_VALUE_MODE_MANUAL   = "heat";
 
+const String   MQTT_CLIENT = "Wavin-AHC-9000-mqtt";       // mqtt client_id prefix. Will be suffixed with Esp8266 mac to make it unique
+
 String mqttDeviceNameWithMac;
 String mqttClientWithMac;
 
@@ -171,6 +173,8 @@ void publishConfiguration(uint8_t channel)
   String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + channel + "/config");
   String climateMessage = String(
     "{\"name\": \"" +mqttDeviceNameWithMac + "_" + channel +  "_climate\", "
+    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + channel +  "_climate_id\", "
+    "\"action_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_OUTPUT + "\", " 
     "\"current_temperature_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_CURRENT + "\", " 
     "\"temperature_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_SETPOINT_SET + "\", " 
     "\"temperature_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_SETPOINT_GET + "\", " 
@@ -180,12 +184,16 @@ void publishConfiguration(uint8_t channel)
     "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
     "\"payload_available\": \"True\", "
     "\"payload_not_available\": \"False\", "
+    "\"min_temp\": \"" + String(MIN_TEMP, 1) + "\", "
+    "\"max_temp\": \"" + String(MAX_TEMP, 1) + "\", "
+    "\"temp_step\": \"" + String(TEMP_STEP, 1) + "\", "
     "\"qos\": \"0\"}"
   );
   
   String batteryTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + channel + "/config");
   String batteryMessage = String(
     "{\"name\": \"" +mqttDeviceNameWithMac + "_" + channel +  "_battery\", "
+    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + channel +  "_battery_id\", "
     "\"state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + "/battery\", " 
     "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
     "\"payload_available\": \"True\", "
@@ -213,7 +221,7 @@ void setup()
   mqttDeviceNameWithMac = String(MQTT_DEVICE_NAME + macStr);
   mqttClientWithMac = String(MQTT_CLIENT + macStr);
 
-  mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
+  mqttClient.setServer(MQTT_SERVER.c_str(), MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
 }
 
@@ -319,7 +327,7 @@ void loop()
             String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_OUTPUT);
             String payload;
             if (status & WavinController::CHANNELS_TIMER_EVENT_OUTP_ON_MASK)
-              payload = "on";
+              payload = "heating";
             else
               payload = "off";
 
