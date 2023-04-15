@@ -2,23 +2,31 @@
 
 Git clone of https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git but restructured for Firmware (FW), Software (SW) and Hardware (HW).
 
+Taking on the challange mentioned in [Issue #3](https://github.com/dkjonas/Wavin-AHC-9000-mqtt/issues/3#issuecomment-435690672) 
+
+##### "connect two AHC's together and control them by one display. I think this is rather unusual setup, so my code doesn't handle this case; It can only control one AHC."
+
+I happen to have such a setup, and would like still to be able to manage floor heating form the display.
+
 ## **Currently under development!!!**
 
 Project planned to be:
 
-A simple Esp8266 mqtt interface for Wavin AHC-9000/Jablotron AC-116, with the goal of being able to control this heating controller from [OpenHAP](https://www.openhab.org) automation software for your home.
+One simple Esp8266 mqtt interface for Wavin AHC-9000/Jablotron AC-116, with the goal of being able to control two Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org) automation software for your home.
 
-The project include a [Kicad](https://www.kicad.org/) PCB layout and a mosquitto broker based on [eclipse-mosquitto](https://hub.docker.com/_/eclipse-mosquitto).
+The heating controllers will still be connected to one display, from where controle can be done as well.
+
+The project include a [Kicad](https://www.kicad.org/) PCB layout and a docker based mosquitto broker based on [eclipse-mosquitto](https://hub.docker.com/_/eclipse-mosquitto).
 
 ## **Esp8266 mqtt interface**
 
 See Firmware markdown [here](Firmware/README.md).
 
-On-board LED at PIN 16 added to indicate active boot up. It turns off at successful connect to Wireless Lan. 
+On-board LED at PIN 16 added to indicate active boot up. It turns off at successful connect to Wireless Lan.
 
 ## **Mosquitto broker**
 
-## **Requirements**
+### **Requirements**
 
 - Raspberry Pi model B v1.2. Installed with Raspberry Pi OS Lite (32-bit) <span id="a1">[[1]](#f1)</span>.
 - Internet access.
@@ -98,6 +106,11 @@ docker compose config
 ```bash
 docker-compose up -d
 ```
+
+## Project development tasks
+
+- Verify if the sp8266 mqtt interface can controle only one of the two heat controllers.
+  - Currently the sp8266 mqtt interface addresses both controllers simultaneously. Meaning, setting a target temperature, it seems to be set for both… and the current temperature are read from both controllers, resulting in two different temperatures for the same channel...
 
 ## Credits
 - dkjonas/Wavin-AHC-9000-mqtt
