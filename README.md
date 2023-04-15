@@ -14,6 +14,8 @@ The project include a [Kicad](https://www.kicad.org/) PCB layout and a mosquitto
 
 See Firmware markdown [here](Firmware/README.md).
 
+On-board LED at PIN 16 added to indicate active boot up. It turns off at successful connect to Wireless Lan. 
+
 ## **Mosquitto broker**
 
 ## **Requirements**

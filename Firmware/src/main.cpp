@@ -3,6 +3,10 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
+#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.1"
+
+#define ALT_LED_BUILTIN 16
+
 // MQTT defines
 // Esp8266 MAC will be added to the device name, to ensure unique topics
 // Default is topics like 'heat/floorXXXXXXXXXXXX/3/target', where 3 is the output id and XXXXXXXXXXXX is the mac
@@ -209,9 +213,19 @@ void publishConfiguration(uint8_t channel)
   configurationPublished[channel] = true;
 }
 
-
+/***************************************************************************************************************
+ ***************************************************************************************************************
+ ***************************************************************************************************************
+ ******************************   S E T U P     B E G I N ****************************************************** 
+ ***************************************************************************************************************
+ ***************************************************************************************************************
+ ***************************************************************************************************************/
 void setup()
 {
+  pinMode(ALT_LED_BUILTIN, OUTPUT);  // Initialize the LED pin as an output
+  digitalWrite(ALT_LED_BUILTIN, LOW);  // Turn the LED on (Note that LOW is the voltage level
+
+  
   uint8_t mac[6];
   WiFi.macAddress(mac);
 
@@ -225,19 +239,30 @@ void setup()
   mqttClient.setCallback(mqttCallback);
 }
 
+/***************************************************************************************************************
+ ***************************************************************************************************************
+ ***************************************************************************************************************
+ ********************************   L O O P     B E G I N ****************************************************** 
+ ***************************************************************************************************************
+ ***************************************************************************************************************
+ ***************************************************************************************************************/
 
 void loop()
 {
   if (WiFi.status() != WL_CONNECTED)
   {
+    digitalWrite(ALT_LED_BUILTIN, LOW);  // Turn the LED to indicate WL connections is lost.
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
 
     if (WiFi.waitForConnectResult() != WL_CONNECTED) return;
+
+  
   }
 
   if (WiFi.status() == WL_CONNECTED)
   {
+    digitalWrite(ALT_LED_BUILTIN, HIGH);  // Turn the LED off to indicate WL is connected
     if (!mqttClient.connected())
     {
       String will = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE);
