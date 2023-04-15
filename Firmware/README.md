@@ -4,7 +4,7 @@ This is a simple Esp8266 mqtt interface for Wavin AHC-9000/Jablotron AC-116, wit
 ## Hardware
 The AHC-9000 uses modbus to communicate over a half duplex RS422 connection. It has two RJ45 connectors for this purpose, which can both be used. 
 The following schematic shows how to connect an Esp8266 to the AHC-9000:
-![Schematic](/electronics/schematic.png)
+![Schematic](./electronics/schematic.png)
 
 Components with links to devices on eBay
 * Esp8266. I use a [NodeMcu 0.9](https://www.ebay.com/itm/NEW-Version-NodeMcu-Lua-ESP8266-CH340-WIFI-Internet-Development-Board-Module/311413475392?epid=502141093&hash=item4881b08840:g:-IEAAOSw-YVXldDM), mostly because it is very convenient to have the onboard USB interface for programming. Almost anything with an Esp8266 on it will work.

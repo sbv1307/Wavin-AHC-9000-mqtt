@@ -3,7 +3,7 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.1"
+#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.2"
 
 #define ALT_LED_BUILTIN 16
 
@@ -256,8 +256,6 @@ void loop()
     WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
 
     if (WiFi.waitForConnectResult() != WL_CONNECTED) return;
-
-  
   }
 
   if (WiFi.status() == WL_CONNECTED)

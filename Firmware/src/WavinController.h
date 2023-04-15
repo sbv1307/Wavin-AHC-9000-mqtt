@@ -43,7 +43,7 @@ class WavinController
     bool recieve(uint16_t *reply, uint8_t cmdtype);
     unsigned int calculateCRC(unsigned char *frame, unsigned char bufferSize);
 
-    const uint8_t MODBUS_DEVICE = 0x01;
+    const uint8_t MODBUS_DEVICE = 0x02;
     const uint8_t MODBUS_READ_REGISTER = 0x43;
     const uint8_t MODBUS_WRITE_REGISTER = 0x44;
     const uint8_t MODBUS_WRITE_MASKED_REGISTER = 0x45;

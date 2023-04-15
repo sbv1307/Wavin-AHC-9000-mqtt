@@ -112,6 +112,14 @@ docker-compose up -d
 - Verify if the sp8266 mqtt interface can controle only one of the two heat controllers.
   - Currently the sp8266 mqtt interface addresses both controllers simultaneously. Meaning, setting a target temperature, it seems to be set for both… and the current temperature are read from both controllers, resulting in two different temperatures for the same channel...
 
+## Change LOG
+
+|       | Module              | Version | Change
+|---    |---                  | ----    |----
+|       |                     | 1.0.0   | Initial commit
+| FW    | WavinController.h   | 1.0.1   | MODBUS_DEVICE changed from = 0x01 to 0x02
+
+
 ## Credits
 - dkjonas/Wavin-AHC-9000-mqtt
 
