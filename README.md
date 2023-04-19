@@ -1,16 +1,23 @@
 # **Wavin-AHC-9000-mqtt**
 
-Git clone of https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git but restructured for Firmware (FW), Software (SW) and Hardware (HW).
+## **The Prpoject is currently under development!!!**
 
-Taking on the challange mentioned in [Issue #3](https://github.com/dkjonas/Wavin-AHC-9000-mqtt/issues/3#issuecomment-435690672) 
+A Esp8266 mqtt interface for more Wavin AHC-9000 controllers connected together and controlled by one Wavin display.
+
+The goal is to be able to control the Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org/), and still be able to use the Wavin display as well.
+
+### **Current project status**
+The current version will controle two Wavin AHC-9000 controllers, initial installed and configured using the Wavin display. The Wavin display will not be working together with the Esp8266 mqtt interface in the current version.
+
+### **History**
+
+The propject is a git clone of https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git but restructured for Firmware (FW), Software (SW) and Hardware (HW).
+
+The project taking on the challange mentioned in [Issue #3](https://github.com/dkjonas/Wavin-AHC-9000-mqtt/issues/3#issuecomment-435690672)
 
 ##### "connect two AHC's together and control them by one display. I think this is rather unusual setup, so my code doesn't handle this case; It can only control one AHC."
 
-I happen to have such a setup, and would like still to be able to manage floor heating form the display.
-
-## **Currently under development!!!**
-
-Project planned to be:
+### **Project planned to be**
 
 One simple Esp8266 mqtt interface for Wavin AHC-9000/Jablotron AC-116, with the goal of being able to control two Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org) automation software for your home.
 
@@ -20,9 +27,7 @@ The project include a [Kicad](https://www.kicad.org/) PCB layout and a docker ba
 
 ## **Esp8266 mqtt interface**
 
-See Firmware markdown [here](Firmware/README.md).
-
-On-board LED at PIN 16 added to indicate active boot up. It turns off at successful connect to Wireless Lan.
+See the cloned Firmware markdown [here](Firmware/README.md).
 
 ## **Mosquitto broker**
 
@@ -112,12 +117,27 @@ docker-compose up -d
 - Verify if the sp8266 mqtt interface can controle only one of the two heat controllers.
   - Currently the sp8266 mqtt interface addresses both controllers simultaneously. Meaning, setting a target temperature, it seems to be set for both… and the current temperature are read from both controllers, resulting in two different temperatures for the same channel...
 
+A simple change to MODBUS_DEVICE in WavinController.h verified that each heat controller can be addressed and read. However the Wavin display stopped working. 
+
+**Two controllers on the same MODBUS seems to give a challange...**
+
+
 ## Change LOG
 
 |       | Module              | Version | Change
 |---    |---                  | ----    |----
-|       |                     | 1.0.0   | Initial commit
-| FW    | WavinController.h   | 1.0.1   | MODBUS_DEVICE changed from = 0x01 to 0x02
+|       |                     | 0.0.1   | Initial commit. On-board LED at PIN 16 added to indicate active boot up. It turns off at successful connect to Wireless Lan. 
+| FW    | WavinController.h   | 1.0.2   | MODBUS_DEVICE changed from = 0x01 to 0x02
+| FW    | WavinController.h   | 1.0.3   | MODBUS_DEVICE changed from = 0x02 to 0x03
+| FW    | WavinController.h   | 1.0.4   | Added MODBUS_DEVICES and NUMBER_OF_DEVIDES
+| FW    | WavinController.cpp | 1.0.4   | Objects modified to handle MODBUS_DEVICE as an argument instad of fixed value.
+| FW    | All modules         | 1.0.4   | Calls to objects, which has changed because of the objects being modified for handle MODBUS_DEVICE as an argument. MQTT Publish functions has been added Modbus Device.
+|       |                     |         | - 
+|       |                     |         | - 
+|       |                     |         | - 
+
+
+
 
 
 ## Credits

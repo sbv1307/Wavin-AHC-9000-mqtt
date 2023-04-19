@@ -5,9 +5,9 @@ class WavinController
 {
   public:
     WavinController(uint8_t pin, bool swapSerialPins, uint16_t timeout_ms);
-    bool readRegisters(uint8_t category, uint8_t page, uint8_t index, uint8_t count, uint16_t *reply);
-    bool writeRegister(uint8_t category, uint8_t page, uint8_t index, uint16_t value);
-    bool writeMaskedRegister(uint8_t category, uint8_t page, uint8_t index, uint16_t value, uint16_t mask);
+    bool readRegisters(uint8_t modbusDevice, uint8_t category, uint8_t page, uint8_t index, uint8_t count, uint16_t *reply);
+    bool writeRegister(uint8_t modbusDevice, uint8_t category, uint8_t page, uint8_t index, uint16_t value);
+    bool writeMaskedRegister(uint8_t modbusDevice, uint8_t category, uint8_t page, uint8_t index, uint16_t value, uint16_t mask);
 
     static const uint8_t CATEGORY_MAIN =        0x00;
     static const uint8_t CATEGORY_ELEMENTS =    0x01;
@@ -29,6 +29,7 @@ class WavinController
     static const uint8_t PACKED_DATA_CONFIGURATION_MODE_MANUAL = 0x00;
     static const uint8_t PACKED_DATA_CONFIGURATION_MODE_STANDBY = 0x01;
 
+    static const uint8_t  NUMBER_OF_DEVICES = 2;
     static const uint8_t  NUMBER_OF_CHANNELS = 16;
     static const uint8_t  CHANNELS_TIMER_EVENT = 0x00;
     static const uint16_t CHANNELS_TIMER_EVENT_OUTP_ON_MASK = 0x0010;
@@ -40,10 +41,10 @@ class WavinController
     uint8_t txEnablePin;
     uint16_t recieveTimeout_ms;
     void transmit(uint8_t *data, uint8_t lenght);
-    bool recieve(uint16_t *reply, uint8_t cmdtype);
+    bool recieve(uint16_t *reply, uint8_t modbusDevice, uint8_t cmdtype);
     unsigned int calculateCRC(unsigned char *frame, unsigned char bufferSize);
 
-    const uint8_t MODBUS_DEVICE = 0x02;
+    const uint8_t MODBUS_DEVICE = 0x03;
     const uint8_t MODBUS_READ_REGISTER = 0x43;
     const uint8_t MODBUS_WRITE_REGISTER = 0x44;
     const uint8_t MODBUS_WRITE_MASKED_REGISTER = 0x45;

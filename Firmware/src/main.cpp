@@ -3,13 +3,13 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.2"
+#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.4"
 
 #define ALT_LED_BUILTIN 16
 
 // MQTT defines
 // Esp8266 MAC will be added to the device name, to ensure unique topics
-// Default is topics like 'heat/floorXXXXXXXXXXXX/3/target', where 3 is the output id and XXXXXXXXXXXX is the mac
+// Default is topics like 'heat/floorXXXXXXXXXXXX/1/3/target', where 1 is the Modbus Device number and 3 is the output id and XXXXXXXXXXXX is the mac
 const String   MQTT_PREFIX              = "heat/";       // include tailing '/' in prefix
 const String   MQTT_DEVICE_NAME         = "floor";       // only alfanumeric and no '/'
 const String   MQTT_ONLINE              = "/online";      
@@ -25,6 +25,8 @@ const String   MQTT_VALUE_MODE_STANDBY  = "off";
 const String   MQTT_VALUE_MODE_MANUAL   = "heat";
 
 const String   MQTT_CLIENT = "Wavin-AHC-9000-mqtt";       // mqtt client_id prefix. Will be suffixed with Esp8266 mac to make it unique
+
+const uint8_t MODBUS_DEVICES[2] = {0x02, 0x03};
 
 String mqttDeviceNameWithMac;
 String mqttClientWithMac;
@@ -46,17 +48,18 @@ unsigned long lastUpdateTime = 0;
 
 const uint16_t POLL_TIME_MS = 5000;
 
+// Create a structure for each channel on all heat controllers controlled by this project.
 struct lastKnownValue_t {
   uint16_t temperature;
   uint16_t setpoint;
   uint16_t battery;
   uint16_t status;
   uint16_t mode;
-} lastSentValues[WavinController::NUMBER_OF_CHANNELS];
+} lastSentValues[WavinController::NUMBER_OF_CHANNELS * WavinController::NUMBER_OF_DEVICES];
 
 const uint16_t LAST_VALUE_UNKNOWN = 0xFFFF;
 
-bool configurationPublished[WavinController::NUMBER_OF_CHANNELS];
+bool configurationPublished[WavinController::NUMBER_OF_CHANNELS * WavinController::NUMBER_OF_DEVICES];
 
 
 // Read a float value from a non zero terminated array of bytes and
@@ -77,6 +80,26 @@ String temperatureAsFloatString(uint16_t temperature)
 
 
 uint8_t getIdFromTopic(char* topic)
+{
+  unsigned int startIndex = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/").length();
+  int i = 0;
+  uint8_t result = 0;
+
+  // The topic now includes a number, defining the heat controller. This number will now be found at topic[startIndex].
+  // To filter out Modbus Device number - the easy (and dirty way): device number will be one character. Plus the seperator (/) makes it two chars.
+  // So - Increasing startIndex by 2, will point at the ID we are looking for.
+  startIndex += 2;
+
+  while(topic[startIndex + i] != '/' && i<3)
+  {
+    result = result * 10 + (topic[startIndex+i]-'0');
+    i++;
+  }
+
+  return result;
+}
+
+uint8_t getModbusDevideFromTopic(char* topic)
 {
   unsigned int startIndex = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/").length();
   int i = 0;
@@ -106,16 +129,19 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
 
   uint8_t id = getIdFromTopic(topic);
 
+  uint8_t modbusDevice = getModbusDevideFromTopic(topic);
+
   if(topicString.endsWith(MQTT_SUFFIX_SETPOINT_SET))
   {
     uint16_t target = temperatureFromString(payloadString);
-    wavinController.writeRegister(WavinController::CATEGORY_PACKED_DATA, id, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, target);
+    wavinController.writeRegister(MODBUS_DEVICES[modbusDevice], WavinController::CATEGORY_PACKED_DATA, id, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, target);
   }
   else if(topicString.endsWith(MQTT_SUFFIX_MODE_SET))
   {
     if(payloadString == MQTT_VALUE_MODE_MANUAL) 
     {
       wavinController.writeMaskedRegister(
+        MODBUS_DEVICES[modbusDevice],
         WavinController::CATEGORY_PACKED_DATA,
         id,
         WavinController::PACKED_DATA_CONFIGURATION,
@@ -125,6 +151,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     else if (payloadString == MQTT_VALUE_MODE_STANDBY)
     {
       wavinController.writeMaskedRegister(
+        MODBUS_DEVICES[modbusDevice],
         WavinController::CATEGORY_PACKED_DATA, 
         id, 
         WavinController::PACKED_DATA_CONFIGURATION, 
@@ -141,7 +168,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
 
 void resetLastSentValues()
 {
-  for(int8_t i=0; i<WavinController::NUMBER_OF_CHANNELS; i++)
+  for(int8_t i = 0; i < (WavinController::NUMBER_OF_CHANNELS * WavinController::NUMBER_OF_DEVICES); i++)
   {
     lastSentValues[i].temperature = LAST_VALUE_UNKNOWN;
     lastSentValues[i].setpoint = LAST_VALUE_UNKNOWN;
@@ -172,18 +199,18 @@ void publishIfNewValue(String topic, String payload, uint16_t newValue, uint16_t
 
 // Publish discovery messages for HomeAssistant
 // See https://www.home-assistant.io/docs/mqtt/discovery/
-void publishConfiguration(uint8_t channel)
+void publishConfiguration(uint8_t device, uint8_t channel)
 {
-  String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + channel + "/config");
+  String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/config");
   String climateMessage = String(
-    "{\"name\": \"" +mqttDeviceNameWithMac + "_" + channel +  "_climate\", "
-    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + channel +  "_climate_id\", "
-    "\"action_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_OUTPUT + "\", " 
-    "\"current_temperature_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_CURRENT + "\", " 
-    "\"temperature_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_SETPOINT_SET + "\", " 
-    "\"temperature_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_SETPOINT_GET + "\", " 
-    "\"mode_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_MODE_SET + "\", " 
-    "\"mode_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_MODE_GET + "\", " 
+    "{\"name\": \"" +mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate\", "
+    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate_id\", "
+    "\"action_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_OUTPUT + "\", " 
+    "\"current_temperature_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_CURRENT + "\", " 
+    "\"temperature_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac  + "/" + device+ "/" + channel + MQTT_SUFFIX_SETPOINT_SET + "\", " 
+    "\"temperature_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET + "\", " 
+    "\"mode_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_SET + "\", " 
+    "\"mode_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_GET + "\", " 
     "\"modes\": [\"" + MQTT_VALUE_MODE_MANUAL + "\", \"" + MQTT_VALUE_MODE_STANDBY + "\"], " 
     "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
     "\"payload_available\": \"True\", "
@@ -194,11 +221,11 @@ void publishConfiguration(uint8_t channel)
     "\"qos\": \"0\"}"
   );
   
-  String batteryTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + channel + "/config");
+  String batteryTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/config");
   String batteryMessage = String(
-    "{\"name\": \"" +mqttDeviceNameWithMac + "_" + channel +  "_battery\", "
-    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + channel +  "_battery_id\", "
-    "\"state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + "/battery\", " 
+    "{\"name\": \"" +mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_battery\", "
+    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_battery_id\", "
+    "\"state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/battery\", " 
     "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
     "\"payload_available\": \"True\", "
     "\"payload_not_available\": \"False\", "
@@ -210,7 +237,7 @@ void publishConfiguration(uint8_t channel)
   mqttClient.publish(climateTopic.c_str(), climateMessage.c_str(), true);  
   mqttClient.publish(batteryTopic.c_str(), batteryMessage.c_str(), true);
   
-  configurationPublished[channel] = true;
+  configurationPublished[ (device * WavinController::NUMBER_OF_CHANNELS) + channel] = true;
 }
 
 /***************************************************************************************************************
@@ -223,7 +250,7 @@ void publishConfiguration(uint8_t channel)
 void setup()
 {
   pinMode(ALT_LED_BUILTIN, OUTPUT);  // Initialize the LED pin as an output
-  digitalWrite(ALT_LED_BUILTIN, LOW);  // Turn the LED on (Note that LOW is the voltage level
+  digitalWrite(ALT_LED_BUILTIN, LOW);  // Turn the LED on to indicate initialazation and not connneted for WiFi (Note that LOW is the voltage level
 
   
   uint8_t mac[6];
@@ -251,7 +278,7 @@ void loop()
 {
   if (WiFi.status() != WL_CONNECTED)
   {
-    digitalWrite(ALT_LED_BUILTIN, LOW);  // Turn the LED to indicate WL connections is lost.
+    digitalWrite(ALT_LED_BUILTIN, LOW);  // Turn ON the LED to indicate WL connections is lost.
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
 
@@ -295,95 +322,99 @@ void loop()
 
       uint16_t registers[11];
 
-      for(uint8_t channel = 0; channel < WavinController::NUMBER_OF_CHANNELS; channel++)
+      
+      for(uint8_t device = 0; device < WavinController::NUMBER_OF_DEVICES; device++)
       {
-        if (wavinController.readRegisters(WavinController::CATEGORY_CHANNELS, channel, WavinController::CHANNELS_PRIMARY_ELEMENT, 1, registers))
+        for(uint8_t channel = 0; channel < WavinController::NUMBER_OF_CHANNELS; channel++)
         {
-          uint16_t primaryElement = registers[0] & WavinController::CHANNELS_PRIMARY_ELEMENT_ELEMENT_MASK;
-          bool allThermostatsLost = registers[0] & WavinController::CHANNELS_PRIMARY_ELEMENT_ALL_TP_LOST_MASK;
-
-          if(primaryElement==0)
+          if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_CHANNELS, channel, WavinController::CHANNELS_PRIMARY_ELEMENT, 1, registers))
           {
-              // Channel not used
-              continue;
-          }
+            uint16_t primaryElement = registers[0] & WavinController::CHANNELS_PRIMARY_ELEMENT_ELEMENT_MASK;
+            bool allThermostatsLost = registers[0] & WavinController::CHANNELS_PRIMARY_ELEMENT_ALL_TP_LOST_MASK;
 
-          if(!configurationPublished[channel])
-          {
-            uint16_t standbyTemperature = STANDBY_TEMPERATURE_DEG * 10;
-            wavinController.writeRegister(WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_STANDBY_TEMPERATURE, standbyTemperature);
-            publishConfiguration(channel);
-          }
-
-          // Read the current setpoint programmed for channel
-          if (wavinController.readRegisters(WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 1, registers))
-          {
-            uint16_t setpoint = registers[0];
-
-            String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
-            String payload = temperatureAsFloatString(setpoint);
-
-            publishIfNewValue(topic, payload, setpoint, &(lastSentValues[channel].setpoint));
-          }
-
-          // Read the current mode for the channel
-          if (wavinController.readRegisters(WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_CONFIGURATION, 1, registers))
-          {
-            uint16_t mode = registers[0] & WavinController::PACKED_DATA_CONFIGURATION_MODE_MASK; 
-
-            String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_MODE_GET);
-            if(mode == WavinController::PACKED_DATA_CONFIGURATION_MODE_STANDBY)
+            if(primaryElement==0)
             {
-              publishIfNewValue(topic, MQTT_VALUE_MODE_STANDBY, mode, &(lastSentValues[channel].mode));
+                // Channel not used
+                continue;
             }
-            else if(mode == WavinController::PACKED_DATA_CONFIGURATION_MODE_MANUAL)
+
+            if(!configurationPublished[ (device * WavinController::NUMBER_OF_CHANNELS) + channel])
             {
-              publishIfNewValue(topic, MQTT_VALUE_MODE_MANUAL, mode, &(lastSentValues[channel].mode));
-            }            
-          }
-
-          // Read the current status of the output for channel
-          if (wavinController.readRegisters(WavinController::CATEGORY_CHANNELS, channel, WavinController::CHANNELS_TIMER_EVENT, 1, registers))
-          {
-            uint16_t status = registers[0] & WavinController::CHANNELS_TIMER_EVENT_OUTP_ON_MASK;
-
-            String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_OUTPUT);
-            String payload;
-            if (status & WavinController::CHANNELS_TIMER_EVENT_OUTP_ON_MASK)
-              payload = "heating";
-            else
-              payload = "off";
-
-            publishIfNewValue(topic, payload, status, &(lastSentValues[channel].status));
-          }
-
-          // If a thermostat for the channel is connected to the controller
-          if(!allThermostatsLost)
-          {
-            // Read values from the primary thermostat connected to this channel 
-            // Primary element from controller is returned as index+1, so 1 i subtracted here to read the correct element
-            if (wavinController.readRegisters(WavinController::CATEGORY_ELEMENTS, primaryElement-1, 0, 11, registers))
-            {
-              uint16_t temperature = registers[WavinController::ELEMENTS_AIR_TEMPERATURE];
-              uint16_t battery = registers[WavinController::ELEMENTS_BATTERY_STATUS]; // In 10% steps
-
-              String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_CURRENT);
-              String payload = temperatureAsFloatString(temperature);
-
-              publishIfNewValue(topic, payload, temperature, &(lastSentValues[channel].temperature));
-
-              topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + channel + MQTT_SUFFIX_BATTERY);
-              payload = String(battery*10);
-
-              publishIfNewValue(topic, payload, battery, &(lastSentValues[channel].battery));
+              uint16_t standbyTemperature = STANDBY_TEMPERATURE_DEG * 10;
+              wavinController.writeRegister(MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_STANDBY_TEMPERATURE, standbyTemperature);
+              publishConfiguration(device, channel);
             }
-          }         
-        }
 
-        // Process incomming messages and maintain connection to the server
-        if(!mqttClient.loop())
-        {
-            return;
+            // Read the current setpoint programmed for channel
+            if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 1, registers))
+            {
+              uint16_t setpoint = registers[0];
+
+              String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
+              String payload = temperatureAsFloatString(setpoint);
+
+              publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint));
+            }
+
+            // Read the current mode for the channel
+            if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_CONFIGURATION, 1, registers))
+            {
+              uint16_t mode = registers[0] & WavinController::PACKED_DATA_CONFIGURATION_MODE_MASK; 
+
+              String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_GET);
+              if(mode == WavinController::PACKED_DATA_CONFIGURATION_MODE_STANDBY)
+              {
+                publishIfNewValue(topic, MQTT_VALUE_MODE_STANDBY, mode, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].mode));
+              }
+              else if(mode == WavinController::PACKED_DATA_CONFIGURATION_MODE_MANUAL)
+              {
+                publishIfNewValue(topic, MQTT_VALUE_MODE_MANUAL, mode, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].mode));
+              }            
+            }
+
+            // Read the current status of the output for channel
+            if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_CHANNELS, channel, WavinController::CHANNELS_TIMER_EVENT, 1, registers))
+            {
+              uint16_t status = registers[0] & WavinController::CHANNELS_TIMER_EVENT_OUTP_ON_MASK;
+
+              String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_OUTPUT);
+              String payload;
+              if (status & WavinController::CHANNELS_TIMER_EVENT_OUTP_ON_MASK)
+                payload = "heating";
+              else
+                payload = "off";
+
+              publishIfNewValue(topic, payload, status, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].status));
+            }
+
+            // If a thermostat for the channel is connected to the controller
+            if(!allThermostatsLost)
+            {
+              // Read values from the primary thermostat connected to this channel 
+              // Primary element from controller is returned as index+1, so 1 i subtracted here to read the correct element
+              if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_ELEMENTS, primaryElement-1, 0, 11, registers))
+              {
+                uint16_t temperature = registers[WavinController::ELEMENTS_AIR_TEMPERATURE];
+                uint16_t battery = registers[WavinController::ELEMENTS_BATTERY_STATUS]; // In 10% steps
+
+                String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_CURRENT);
+                String payload = temperatureAsFloatString(temperature);
+
+                publishIfNewValue(topic, payload, temperature, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].temperature));
+
+                topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_BATTERY);
+                payload = String(battery*10);
+
+                publishIfNewValue(topic, payload, battery, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].battery));
+              }
+            }         
+          }
+
+          // Process incomming messages and maintain connection to the server
+          if(!mqttClient.loop())
+          {
+              return;
+          }
         }
       }
     }
