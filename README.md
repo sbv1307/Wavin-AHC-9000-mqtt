@@ -117,10 +117,11 @@ docker-compose up -d
 - Verify if the sp8266 mqtt interface can controle only one of the two heat controllers.
   - Currently the sp8266 mqtt interface addresses both controllers simultaneously. Meaning, setting a target temperature, it seems to be set for both… and the current temperature are read from both controllers, resulting in two different temperatures for the same channel...
 
-A simple change to MODBUS_DEVICE in WavinController.h verified that each heat controller can be addressed and read. However the Wavin display stopped working. 
+A simple change to MODBUS_DEVICE in WavinController.h verified that each heat controller can be addressed and read. However the Wavin display stopped working.
 
-**Two controllers on the same MODBUS seems to give a challange...**
+ - Autodiscovery seems to have a problem in OpenHAB 3. Things are discoverd, but the channels are not.
 
+**Two controllers on the same MODBUS seems to give a challange... It is NOT supported by the Modbus standard!**
 
 ## Change LOG
 
