@@ -3,7 +3,7 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.4"
+#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.5"
 
 #define ALT_LED_BUILTIN 16
 
@@ -201,7 +201,14 @@ void publishIfNewValue(String topic, String payload, uint16_t newValue, uint16_t
 // See https://www.home-assistant.io/docs/mqtt/discovery/
 void publishConfiguration(uint8_t device, uint8_t channel)
 {
-  String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/config");
+  /*
+   * Homeassistand discovery topic needs to follow a specific format: <discovery_prefix>/<component>/[<node_id>/]<object_id>/config
+   * To get a <object_id> form <device> and <channel> I decidec to combine this as "(device * 100) + channel"
+   * So e.g. homeassistant/climate/floorXXXXXXXXXXXX/1/3/config will change to homeassistant/climate/floorXXXXXXXXXXXX/103/config
+   * That made discovery of things work in OpebHAB, but the discovery of channels did not.
+   */
+  uint8_t device_channel = (device * 100) + channel;  
+  String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
   String climateMessage = String(
     "{\"name\": \"" +mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate\", "
     "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate_id\", "
@@ -221,7 +228,7 @@ void publishConfiguration(uint8_t device, uint8_t channel)
     "\"qos\": \"0\"}"
   );
   
-  String batteryTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/config");
+  String batteryTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
   String batteryMessage = String(
     "{\"name\": \"" +mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_battery\", "
     "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_battery_id\", "
