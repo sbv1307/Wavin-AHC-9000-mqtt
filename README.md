@@ -29,6 +29,22 @@ The project include a [Kicad](https://www.kicad.org/) PCB layout and a docker ba
 
 See the cloned Firmware markdown [here](Firmware/README.md).
 
+### **SOFTWARE**
+
+### Compiling
+
+Over The Air update (OTA) is implemented in main.cpp. 
+
+Compiled with [PlatformIO](https://platformio.org/) installed in VS Code and adding the follow to platformio.ini the code will provide the possability of setting PlatformIO Project Environment to   `env:nodemcu_ota` and upload will happen OTA.
+
+````bash
+[env:nodemcu_ota]
+extends = env:nodemcu
+upload_protocol = espota
+upload_port = <IP Address of NodeMCU>
+````
+
+
 ## **Mosquitto broker**
 
 ### **Requirements**
@@ -119,22 +135,24 @@ docker-compose up -d
 
 A simple change to MODBUS_DEVICE in WavinController.h verified that each heat controller can be addressed and read. However the Wavin display stopped working.
 
+**Two controllers on the same MODBUS seems to give a challange... It is NOT supported by the Modbus standard!**
+
  - Autodiscovery seems to have a problem in OpenHAB 3. Things are discoverd, but the channels are not.
 
-**Two controllers on the same MODBUS seems to give a challange... It is NOT supported by the Modbus standard!**
+ To make uploading of new sketches easier - implementing Over The Air update (OTA).
 
 ## Change LOG
 
 |       | Module              | Version | Change
 |---    |---                  | ----    |----
 |       |                     | 0.0.1   | Initial commit. On-board LED at PIN 16 added to indicate active boot up. It turns off at successful connect to Wireless Lan. 
-| FW    | WavinController.h   | 1.0.2   | MODBUS_DEVICE changed from = 0x01 to 0x02
-| FW    | WavinController.h   | 1.0.3   | MODBUS_DEVICE changed from = 0x02 to 0x03
-| FW    | WavinController.h   | 1.0.4   | Added MODBUS_DEVICES and NUMBER_OF_DEVIDES
-| FW    | WavinController.cpp | 1.0.4   | Objects modified to handle MODBUS_DEVICE as an argument instad of fixed value.
-| FW    | All modules         | 1.0.4   | Calls to objects, which has changed because of the objects being modified for handle MODBUS_DEVICE as an argument. MQTT Publish functions has been added Modbus Device.
-|       |                     |         | - 
-|       |                     |         | - 
+| FW    | WavinController.h   | 0.0.2   | MODBUS_DEVICE changed from = 0x01 to 0x02
+| FW    | WavinController.h   | 0.0.3   | MODBUS_DEVICE changed from = 0x02 to 0x03
+| FW    | WavinController.h   | 0.0.4   | Added MODBUS_DEVICES and NUMBER_OF_DEVIDES
+| FW    | WavinController.cpp | 0.0.4   | Objects modified to handle MODBUS_DEVICE as an argument instad of fixed value.
+| FW    | All modules         | 0.0.4   | Calls to objects, which has changed because of the objects being modified for handle MODBUS_DEVICE as an argument. MQTT Publish functions has been added Modbus Device.
+| FW    | main.cpp            | 0.0.5   | publishConfiguration() changed to comply with homeassistant topic.
+| FW    | mail.cpp            | 0.0.6   | Implementing OTA update. 
 |       |                     |         | - 
 
 

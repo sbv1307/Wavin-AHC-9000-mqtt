@@ -1,9 +1,10 @@
+#include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.5"
+#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.6"
 
 #define ALT_LED_BUILTIN 16
 
@@ -271,6 +272,11 @@ void setup()
 
   mqttClient.setServer(MQTT_SERVER.c_str(), MQTT_PORT);
   mqttClient.setCallback(mqttCallback);
+
+  /*
+   * Enable OTA update
+   */
+  ArduinoOTA.begin();
 }
 
 /***************************************************************************************************************
@@ -294,6 +300,9 @@ void loop()
 
   if (WiFi.status() == WL_CONNECTED)
   {
+    // Check for over the air update request and (if present) flash it
+    ArduinoOTA.handle();
+  
     digitalWrite(ALT_LED_BUILTIN, HIGH);  // Turn the LED off to indicate WL is connected
     if (!mqttClient.connected())
     {
