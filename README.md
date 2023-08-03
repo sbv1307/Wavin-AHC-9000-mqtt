@@ -4,14 +4,14 @@
 
 A Esp8266 mqtt interface for more Wavin AHC-9000 controllers connected together and controlled by one Wavin display.
 
-The goal is to be able to control the Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org/), and still be able to use the Wavin display as well.
+The goal is to be able to control the Wavin AHC 9000 heating controllers from [Home Assistant](https://www.home-assistant.io/), and still be able to use the Wavin display as well.
+
+The origilan goal of being able to controle the Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org/), has been abandoned because I gave up finding an easy intgegration into OpenHAB.
 
 ### **Current project status**
 In the current version, the Esp8266 mqtt interface will controle two Wavin AHC-9000 controllers. The twp controllers are initial installed and configured using the Wavin display. 
 
-Because the MODBUS specifications does not allow more than one master, the Wavin display will not be working together with the Esp8266 mqtt interface in the current version.
-
-Giving up finding a way, to get autodiscovery to work in openhab - Considdering giving up using OpenHAB...
+Because the MODBUS specifications does not allow more than one master, the Wavin display will not be working together with the Esp8266 mqtt interface in the current version. Investigations will be done to verify if it will be possible to build a solution, using a 2 Circuit IC Switch [CD4052B](https://www.ti.com/product/CD4052B-MIL#tech-docs) to controle which controller (Wavin display or Esp8266) will be in action.
 
 ### **History**
 

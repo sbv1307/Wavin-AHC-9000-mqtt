@@ -8,6 +8,29 @@
 
 #define ALT_LED_BUILTIN 16
 
+/*
+ *
+ * the following statement can be inserted for debug.
+ * mqttClient.publish("debug", (const uint8_t *)"Exit subscriptions", 18, false);
+ * ----------------------------------------------^^^^Text^^^^^^^^^^---^Numer of chars -1^
+ *
+ * if (device == 0 && channel == 3)
+ * {
+ *   String debugMsg = String(MQTT_PREFIX  + "Attempt to read setpoint for device: " + device + " Chanel: " + channel);
+ *   mqttClient.publish("debug", debugMsg.c_str(), false);
+ * }
+ * 
+ * if (device == 0 && channel == 3)
+ * {
+ *   String lastSetpoint = temperatureAsFloatString(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint);
+ *  String debugMsg = String(
+ *   MQTT_PREFIX  + "Setpoint read for device: " + device + " Chanel: " + channel + " Setpoint / target: " + setpoint +
+ *   "Last sent value for setpoint / target: " + lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint
+ *   );
+ *   mqttClient.publish("debug", debugMsg.c_str(), false);
+ * }
+ */
+
 // MQTT defines
 // Esp8266 MAC will be added to the device name, to ensure unique topics
 // Default is topics like 'heat/floorXXXXXXXXXXXX/1/3/target', where 1 is the Modbus Device number and 3 is the output id and XXXXXXXXXXXX is the mac
@@ -62,7 +85,6 @@ const uint16_t LAST_VALUE_UNKNOWN = 0xFFFF;
 
 bool configurationPublished[WavinController::NUMBER_OF_CHANNELS * WavinController::NUMBER_OF_DEVICES];
 
-
 // Read a float value from a non zero terminated array of bytes and
 // return 10 times the value as an integer
 uint16_t temperatureFromString(String payload)
@@ -86,7 +108,7 @@ uint8_t getIdFromTopic(char* topic)
   int i = 0;
   uint8_t result = 0;
 
-  // The topic now includes a number, defining the heat controller. This number will now be found at topic[startIndex].
+  // The topic now includes a number, defining the heat controller / Device. This number will now be found at topic[startIndex].
   // To filter out Modbus Device number - the easy (and dirty way): device number will be one character. Plus the seperator (/) makes it two chars.
   // So - Increasing startIndex by 2, will point at the ID we are looking for.
   startIndex += 2;
@@ -119,7 +141,7 @@ uint8_t getModbusDevideFromTopic(char* topic)
 void mqttCallback(char* topic, byte* payload, unsigned int length)
 {
   String topicString = String(topic);
-  
+
   char terminatedPayload[length+1];
   for(unsigned int i=0; i<length; i++)
   {
@@ -132,10 +154,18 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
 
   uint8_t modbusDevice = getModbusDevideFromTopic(topic);
 
+  // Force re-read of registers from controller  
+  lastUpdateTime = 0;
+
   if(topicString.endsWith(MQTT_SUFFIX_SETPOINT_SET))
   {
     uint16_t target = temperatureFromString(payloadString);
-    wavinController.writeRegister(MODBUS_DEVICES[modbusDevice], WavinController::CATEGORY_PACKED_DATA, id, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, target);
+    wavinController.writeRegister(
+      MODBUS_DEVICES[modbusDevice], 
+      WavinController::CATEGORY_PACKED_DATA, 
+      id, 
+      WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 
+      target);
   }
   else if(topicString.endsWith(MQTT_SUFFIX_MODE_SET))
   {
@@ -160,10 +190,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
         ~WavinController::PACKED_DATA_CONFIGURATION_MODE_MASK);
     }
   }
-
-  // Force re-read of registers from controller now
-  lastUpdateTime = 0;
-
+  
 }
 
 
@@ -309,10 +336,10 @@ void loop()
       String will = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE);
       if (mqttClient.connect(mqttClientWithMac.c_str(), MQTT_USER.c_str(), MQTT_PASS.c_str(), will.c_str(), 1, true, "False") )
       {
-          String setpointSetTopic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/+" + MQTT_SUFFIX_SETPOINT_SET);
+          String setpointSetTopic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/+/+" + MQTT_SUFFIX_SETPOINT_SET);
           mqttClient.subscribe(setpointSetTopic.c_str(), 1);
           
-          String modeSetTopic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/+" + MQTT_SUFFIX_MODE_SET);
+          String modeSetTopic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/+/+" + MQTT_SUFFIX_MODE_SET);
           mqttClient.subscribe(modeSetTopic.c_str(), 1);
           
           mqttClient.publish(will.c_str(), (const uint8_t *)"True", 4, true);
@@ -332,13 +359,14 @@ void loop()
         return;
     }
 
+
     if (lastUpdateTime + POLL_TIME_MS < millis())
     {
-      lastUpdateTime = millis();
-
-      uint16_t registers[11];
-
       
+      uint16_t registers[11];
+      
+      mqttClient.publish("debug", (const uint8_t *)"Start reading channels", 22, false);
+
       for(uint8_t device = 0; device < WavinController::NUMBER_OF_DEVICES; device++)
       {
         for(uint8_t channel = 0; channel < WavinController::NUMBER_OF_CHANNELS; channel++)
@@ -360,14 +388,30 @@ void loop()
               wavinController.writeRegister(MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_STANDBY_TEMPERATURE, standbyTemperature);
               publishConfiguration(device, channel);
             }
+            //** DEBUG message
+            if (device < 2 && channel < 11)
+            {
+              String debugMsg = String(MQTT_PREFIX  + "Attempt to read setpoint for device: " + device + " Chanel: " + channel);
+              mqttClient.publish("debug", debugMsg.c_str(), false);
+            }
 
             // Read the current setpoint programmed for channel
             if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 1, registers))
             {
               uint16_t setpoint = registers[0];
-
-              String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
+              
+              String topic = String( MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
               String payload = temperatureAsFloatString(setpoint);
+
+              //* DEBUG message
+              if (device < 2 && channel < 11)
+              {
+                String debugMsg = String(
+                MQTT_PREFIX  + "Setpoint read for device: " + device + " Chanel: " + channel + " Setpoint / target: " + setpoint +
+                "Last sent value for setpoint / target: " + lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint
+                );
+                mqttClient.publish("debug", debugMsg.c_str(), false);
+              }
 
               publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint));
             }
@@ -431,8 +475,16 @@ void loop()
           {
               return;
           }
+          if (WiFi.status() == WL_CONNECTED)
+          {
+            // Check for over the air update request and (if present) flash it
+            ArduinoOTA.handle();
+          }
         }
       }
+      mqttClient.publish("debug", (const uint8_t *)"Finished reading sensors", 18, false);
+
+      lastUpdateTime = millis();
     }
   }
 }
