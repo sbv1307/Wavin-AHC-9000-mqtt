@@ -25,6 +25,14 @@
  * Introducing af "delayForOAT" function, which creates a delay between writing and reading 
  * WavinController registers and calling ArduinoOTA.handle() during the delay, solved the issues of Changing target temeratur and  OTA update.
  * 
+ * ISSUES V0.0.7
+ * Changing target temeratur:
+ * Target temperature will get updated, but it usually takes a long time!
+ * The problem is, that iterating through all channels takes quite a while, which will cause the response to a change of temperature will take a while.
+ * 
+ * Instead of waiting for the iteration process to finally get the target temperature changed, call the process for readng the setpont dirctly from the 
+ * MQTT callback function.
+ * 
  * the following statement can be inserted for debug.
  * mqttClient.publish("debug", (const uint8_t *)"Exit subscriptions", 18, false);
  * ----------------------------------------------^^^^Text^^^^^^^^^^---^Numer of chars -1^
@@ -167,6 +175,36 @@ uint8_t getModbusDevideFromTopic(char* topic)
   return result;
 }
 
+void publishIfNewValue(String topic, String payload, uint16_t newValue, uint16_t *lastSentValue)
+{
+  if (newValue != *lastSentValue)
+  {
+    if (mqttClient.publish(topic.c_str(), payload.c_str(), true))
+    {
+        *lastSentValue = newValue;
+    }
+    else
+    {
+      *lastSentValue = LAST_VALUE_UNKNOWN;
+    }
+  }
+}
+
+void readSetpoint( uint8_t device, uint8_t channel, uint16_t registers[11])
+{
+
+  if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 1, registers))
+  {
+    uint16_t setpoint = registers[0];
+    
+    String topic = String( MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
+    String payload = temperatureAsFloatString(setpoint);
+
+    publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint));
+  }
+
+
+}
 
 void mqttCallback(char* topic, byte* payload, unsigned int length)
 {
@@ -196,6 +234,17 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
       id, 
       WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 
       target);
+
+    delayForOAT(1000);
+
+    uint16_t registers[11];
+    if (wavinController.readRegisters(MODBUS_DEVICES[modbusDevice], WavinController::CATEGORY_CHANNELS, id, WavinController::CHANNELS_PRIMARY_ELEMENT, 1, registers))
+    {
+      delayForOAT(1000);
+
+      readSetpoint( modbusDevice, id, registers);
+    }
+    
   }
   else if(topicString.endsWith(MQTT_SUFFIX_MODE_SET))
   {
@@ -239,36 +288,6 @@ void resetLastSentValues()
 }
 
 
-void publishIfNewValue(String topic, String payload, uint16_t newValue, uint16_t *lastSentValue)
-{
-  if (newValue != *lastSentValue)
-  {
-    if (mqttClient.publish(topic.c_str(), payload.c_str(), true))
-    {
-        *lastSentValue = newValue;
-    }
-    else
-    {
-      *lastSentValue = LAST_VALUE_UNKNOWN;
-    }
-  }
-}
-
-void readSetpoint( uint8_t device, uint8_t channel, uint16_t registers[11])
-{
-
-  if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 1, registers))
-  {
-    uint16_t setpoint = registers[0];
-    
-    String topic = String( MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
-    String payload = temperatureAsFloatString(setpoint);
-
-    publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint));
-  }
-
-
-}
 
 // Publish discovery messages for HomeAssistant
 // See https://www.home-assistant.io/docs/mqtt/discovery/
@@ -407,11 +426,7 @@ void loop()
 
     if (lastUpdateTime + POLL_TIME_MS < millis())
     {
-      
       uint16_t registers[11];
-      
-      mqttClient.publish("debug/readChannels", (const uint8_t *)"Start reading channels", 22, false);
-
       for(uint8_t device = 0; device < WavinController::NUMBER_OF_DEVICES; device++)
       {
         for(uint8_t channel = 0; channel < WavinController::NUMBER_OF_CHANNELS; channel++)
@@ -435,12 +450,9 @@ void loop()
               publishConfiguration(device, channel);
             }
 
-            /*
-             * Seems that registers cannot just be read ome after another, there seems to be a need to a pause.
-             * Instead of nys adde a delay, calls to ArduinoOTA.handle() will solve the pause issue and add better OTA funktionality
-            */
             delayForOAT(125);
 
+            // Read the current setpoint for the chanel
             readSetpoint( device, channel, registers);
 
             // Read the current mode for the channel
@@ -504,8 +516,6 @@ void loop()
           }
         }
       }
-      mqttClient.publish("debug/readChannels", (const uint8_t *)"Finished reading channels", 25, false);
-
       lastUpdateTime = millis();
     }
   }
