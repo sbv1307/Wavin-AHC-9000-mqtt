@@ -156,8 +156,8 @@ A simple change to MODBUS_DEVICE in WavinController.h verified that each heat co
 | FW    | WavinController.cpp | 0.0.4   | Objects modified to handle MODBUS_DEVICE as an argument instad of fixed value.
 | FW    | All modules         | 0.0.4   | Calls to objects, which has changed because of the objects being modified for handle MODBUS_DEVICE as an argument. MQTT Publish functions has been added Modbus Device.
 | FW    | main.cpp            | 0.0.5   | publishConfiguration() changed to comply with homeassistant topic.
-| FW    | mail.cpp            | 0.0.6   | Implementing OTA update. 
-|       |                     |         | - 
+| FW    | main.cpp            | 0.0.6   | Implementing OTA update.
+| FW    | main.cpp            | 0.0.7   | OTA and temerature setting issues.
 
 
 
