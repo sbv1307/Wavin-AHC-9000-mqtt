@@ -29,7 +29,7 @@ class WavinController
     static const uint8_t PACKED_DATA_CONFIGURATION_MODE_MANUAL = 0x00;
     static const uint8_t PACKED_DATA_CONFIGURATION_MODE_STANDBY = 0x01;
 
-    static const uint8_t  NUMBER_OF_DEVICES = 2;
+    static const uint8_t  NUMBER_OF_DEVICES = 2;  
     static const uint8_t  NUMBER_OF_CHANNELS = 16;
     static const uint8_t  CHANNELS_TIMER_EVENT = 0x00;
     static const uint16_t CHANNELS_TIMER_EVENT_OUTP_ON_MASK = 0x0010;
@@ -44,7 +44,6 @@ class WavinController
     bool recieve(uint16_t *reply, uint8_t modbusDevice, uint8_t cmdtype);
     unsigned int calculateCRC(unsigned char *frame, unsigned char bufferSize);
 
-    const uint8_t MODBUS_DEVICE = 0x03;
     const uint8_t MODBUS_READ_REGISTER = 0x43;
     const uint8_t MODBUS_WRITE_REGISTER = 0x44;
     const uint8_t MODBUS_WRITE_MASKED_REGISTER = 0x45;

@@ -56,7 +56,6 @@ bool WavinController::recieve(uint16_t *reply, uint8_t modbusDevice, uint8_t cmd
       n++;
 
       if (n > 5 &&
-        // buffer[0] == MODBUS_DEVICE &&
         buffer[0] == modbusDevice &&
         buffer[1] == cmdtype &&
         buffer[2] + 5 == n)
@@ -98,7 +97,6 @@ bool WavinController::readRegisters(uint8_t modbusDevice, uint8_t category, uint
 {
   uint8_t message[8];
 
-  // message[0] = MODBUS_DEVICE;
   message[0] = modbusDevice;
   message[1] = MODBUS_READ_REGISTER;
   message[2] = category;
@@ -121,7 +119,6 @@ bool WavinController::writeRegister(uint8_t modbusDevice, uint8_t category, uint
 {
   uint8_t message[10];
 
-  // message[0] = MODBUS_DEVICE;
   message[0] = modbusDevice;
   message[1] = MODBUS_WRITE_REGISTER;
   message[2] = category;
@@ -146,7 +143,6 @@ bool WavinController::writeMaskedRegister(uint8_t modbusDevice, uint8_t category
 {
   uint8_t message[12];
 
-  // message[0] = MODBUS_DEVICE;
   message[0] = modbusDevice;
   message[1] = MODBUS_WRITE_MASKED_REGISTER;
   message[2] = category;

@@ -4,9 +4,10 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.7"
+#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.8"
 
 #define ALT_LED_BUILTIN 16
+
 
 /*
  * ISSUES V0.0.6
@@ -33,30 +34,12 @@
  * Instead of waiting for the iteration process to finally get the target temperature changed, call the process for readng the setpont dirctly from the 
  * MQTT callback function.
  * 
- * the following statement can be inserted for debug.
- * mqttClient.publish("debug", (const uint8_t *)"Exit subscriptions", 18, false);
- * ----------------------------------------------^^^^Text^^^^^^^^^^---^Numer of chars -1^
- *
- * if (device == 0 && channel == 3)
- * {
- *   String debugMsg = String(MQTT_PREFIX  + "Attempt to read setpoint for device: " + device + " Chanel: " + channel);
- *   mqttClient.publish("debug", debugMsg.c_str(), false);
- * }
- * 
- * if (device == 0 && channel == 3)
- * {
- *   String lastSetpoint = temperatureAsFloatString(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint);
- *  String debugMsg = String(
- *   MQTT_PREFIX  + "Setpoint read for device: " + device + " Chanel: " + channel + " Setpoint / target: " + setpoint +
- *   "Last sent value for setpoint / target: " + lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint
- *   );
- *   mqttClient.publish("debug", debugMsg.c_str(), false);
- * }
  */
 
 // MQTT defines
 // Esp8266 MAC will be added to the device name, to ensure unique topics
 // Default is topics like 'heat/floorXXXXXXXXXXXX/1/3/target', where 1 is the Modbus Device number and 3 is the output id and XXXXXXXXXXXX is the mac
+
 const String   MQTT_PREFIX              = "heat/";       // include tailing '/' in prefix
 const String   MQTT_DEVICE_NAME         = "floor";       // only alfanumeric and no '/'
 const String   MQTT_ONLINE              = "/online";      
@@ -72,8 +55,6 @@ const String   MQTT_VALUE_MODE_STANDBY  = "off";
 const String   MQTT_VALUE_MODE_MANUAL   = "heat";
 
 const String   MQTT_CLIENT = "Wavin-AHC-9000-mqtt";       // mqtt client_id prefix. Will be suffixed with Esp8266 mac to make it unique
-
-const uint8_t MODBUS_DEVICES[2] = {0x02, 0x03};
 
 String mqttDeviceNameWithMac;
 String mqttClientWithMac;
@@ -299,10 +280,13 @@ void publishConfiguration(uint8_t device, uint8_t channel)
    * So e.g. homeassistant/climate/floorXXXXXXXXXXXX/1/3/config will change to homeassistant/climate/floorXXXXXXXXXXXX/103/config
    * That made discovery of things work in OpebHAB, but the discovery of channels did not.
    */
-  uint8_t device_channel = (device * 100) + channel;  
+
+  uint8_t device_channel = (device * 100) + channel;
+  String room = String(rooms[(ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel]);
+  
   String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
   String climateMessage = String(
-    "{\"name\": \"" +mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate\", "
+    "{\"name\": \"" + room + "\", "
     "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate_id\", "
     "\"action_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_OUTPUT + "\", " 
     "\"current_temperature_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_CURRENT + "\", " 
@@ -320,9 +304,10 @@ void publishConfiguration(uint8_t device, uint8_t channel)
     "\"qos\": \"0\"}"
   );
   
+  String Battery = "Batteri på rumtermostat i ";
   String batteryTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
   String batteryMessage = String(
-    "{\"name\": \"" +mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_battery\", "
+    "{\"name\": \"" + Battery + room + "\", "
     "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_battery_id\", "
     "\"state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/battery\", " 
     "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "

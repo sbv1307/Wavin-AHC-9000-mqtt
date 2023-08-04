@@ -1,33 +1,26 @@
 # **Wavin-AHC-9000-mqtt**
 
-## **The Prpoject is currently under development!!!**
 
 A Esp8266 mqtt interface for more Wavin AHC-9000 controllers connected together and controlled by one Wavin display.
 
 The goal is to be able to control the Wavin AHC 9000 heating controllers from [Home Assistant](https://www.home-assistant.io/), and still be able to use the Wavin display as well.
 
-The origilan goal of being able to controle the Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org/), has been abandoned because I gave up finding an easy intgegration into OpenHAB.
+The origilan goal of being able to controle the Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org/), has been abandoned because I gave up finding an automated MQTT intgegration in OpenHAB.
 
 ### **Current project status**
-In the current version, the Esp8266 mqtt interface will controle two Wavin AHC-9000 controllers. The twp controllers are initial installed and configured using the Wavin display. 
+In the current version, the Esp8266 mqtt interface will controle one or more Wavin AHC-9000 controllers. The Wavin AHC-9000 controllers are initial installed and configured using the Wavin display, which configures each controller's MOC-BUS device number.
 
 Because the MODBUS specifications does not allow more than one master, the Wavin display will not be working together with the Esp8266 mqtt interface in the current version. Investigations will be done to verify if it will be possible to build a solution, using a 2 Circuit IC Switch [CD4052B](https://www.ti.com/product/CD4052B-MIL#tech-docs) to controle which controller (Wavin display or Esp8266) will be in action.
 
+The project include a [Kicad](https://www.kicad.org/) PCB layout and a docker based mosquitto broker based on [eclipse-mosquitto](https://hub.docker.com/_/eclipse-mosquitto).
+
 ### **History**
 
-The propject is a git clone of https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git but restructured for Firmware (FW), Software (SW) and Hardware (HW).
+This propject has started as a git clone of https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git but restructured for Firmware (FW), Software (SW) and Hardware (HW).
 
-The project taking on the challange mentioned in [Issue #3](https://github.com/dkjonas/Wavin-AHC-9000-mqtt/issues/3#issuecomment-435690672)
+This project takes on the challange mentioned in [Issue #3](https://github.com/dkjonas/Wavin-AHC-9000-mqtt/issues/3#issuecomment-435690672)
 
 ##### "connect two AHC's together and control them by one display. I think this is rather unusual setup, so my code doesn't handle this case; It can only control one AHC."
-
-### **Project planned to be**
-
-One simple Esp8266 mqtt interface for Wavin AHC-9000/Jablotron AC-116, with the goal of being able to control two Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org) automation software for your home.
-
-The heating controllers will still be connected to one display, from where controle can be done as well.
-
-The project include a [Kicad](https://www.kicad.org/) PCB layout and a docker based mosquitto broker based on [eclipse-mosquitto](https://hub.docker.com/_/eclipse-mosquitto).
 
 ## **Esp8266 mqtt interface**
 
@@ -99,51 +92,12 @@ volumes:
 
 ````
 
-Before starting the docker container, create a .env file in the same directory as the docker-compose.yaml file.
-
-```bash
-vi .env
-```
-
-Add the following contend:
-
- ````bash
-MQTT_SERVER='mosquitto-mqtt'        # MQTT Broke's hostname or IP Address (here the `mosquitto-mqtt` docker container name is used.)
-MQTT_PORT=1883                      # MQTT Broker's port number. TCP/IP port 1883 is reserved with IANA for use with MQTT. 
-                                    # TCP/IP port 8883 is also registered, for using MQTT over SSL.
-MQTT_CLIENT_ID='webhook-subscriber' # Name used to identify the MQTT client.
-NOTIFICATION_E_MAIL=*E-mail addres* # E-mail address to which notifications will be send
-# If the one or more of the following environment variables is NOT set, e-mail notificatinos will NOT be send.
-MQTT_POWERUP_NOTIFICATION='YES'     # IF set: Energy Meter Powerup notifications will be send. 
-MQTT_DISCONNECT_NOTIFICATION='YES'  # IF set: Disconnect notifications will be send
-MQTT_RECONNECT_NOTIFICATION='YES'   # IF set: Re-connect  notifications will be send
-MQTT_ALIVE_NOTIFICATION=`YES`
-````
-
-Verify that the environment variables is succesfull read by docker compose.
-
-````bash
-docker compose config
-````
 
  Start the docker container with `docker-compose up -d`.
 
 ```bash
 docker-compose up -d
 ```
-
-## Project development tasks
-
-- Verify if the sp8266 mqtt interface can controle only one of the two heat controllers.
-  - Currently the sp8266 mqtt interface addresses both controllers simultaneously. Meaning, setting a target temperature, it seems to be set for both… and the current temperature are read from both controllers, resulting in two different temperatures for the same channel...
-
-A simple change to MODBUS_DEVICE in WavinController.h verified that each heat controller can be addressed and read. However the Wavin display stopped working.
-
-**Two controllers on the same MODBUS seems to give a challange... It is NOT supported by the Modbus standard!**
-
- - Autodiscovery seems to have a problem in OpenHAB 3. Things are discoverd, but the channels are not.
-
- To make uploading of new sketches easier - implementing Over The Air update (OTA).
 
 ## Change LOG
 
@@ -158,6 +112,8 @@ A simple change to MODBUS_DEVICE in WavinController.h verified that each heat co
 | FW    | main.cpp            | 0.0.5   | publishConfiguration() changed to comply with homeassistant topic.
 | FW    | main.cpp            | 0.0.6   | Implementing OTA update.
 | FW    | main.cpp            | 0.0.7   | OTA and temerature setting issues.
+| FW    | main.cpp & PrivateConfig.h | 0.0.8   | Configurable names for chanels added to PrivateConfig.h and implemented in mail.cpp
+
 
 
 

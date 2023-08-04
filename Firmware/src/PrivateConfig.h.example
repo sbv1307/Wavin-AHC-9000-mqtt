@@ -1,0 +1,39 @@
+#include <ESP8266WiFi.h>
+
+const String   WIFI_SSID = "Enter wireless SSID here";         // wifi ssid
+const String   WIFI_PASS = "Enter wireless password here";     // wifi password
+
+const String   MQTT_SERVER = "Enter mqtt server address here"; // mqtt server address without port number
+const String   MQTT_USER   = "Enter mqtt username here";       // mqtt user. Use "" for no username
+const String   MQTT_PASS   = "Enter mqtt password here";       // mqtt password. Use "" for no password
+const uint16_t MQTT_PORT   = 1883;                             // mqtt port
+
+const float    MIN_TEMP    = 6.0;                              // minimum temperature to set
+const float    MAX_TEMP    = 40.0;                             // maximum temperature to set
+const float    TEMP_STEP   = 0.5;                              // the temperature step size, either 0.5 or 1.0
+
+const uint8_t MODBUS_DEVICES[2] = {0x02, 0x03}; // The first two devices will be 0x02 and 0x03
+                                                // Adding more devices: 
+                                                // Change NUMBER_OF_DEVICES in WavinController.h and
+                                                // add device ID to the list here 0x04 ...
+
+static const uint8_t  ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[] = {0,11,15}; // Used to find room i rooms array
+
+// Be sure that then number of elements in rooms matches the total amount of channels read for all devices!!!
+char * rooms[] = {
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 0 <<== ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[0] = 0
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 1
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 2
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 3
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 4
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 5
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 6
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 7
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 8
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 9
+           (char*) "Enter room name here",      // Name for the room at device 0 chanel 10 
+           (char*) "Enter room name here",      // Name for the room at device 1 chanel 0 <<== ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[1] = 11
+           (char*) "Enter room name here ,      // Name for the room at device 1 chanel 1
+           (char*) "Enter room name here",      // Name for the room at device 1 chanel 2
+           (char*) "Enter room name here"       // Name for the room at device 1 chanel 3
+};                                              // Name for the room at device 2 chanel 0      <<== ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[2] = 15
