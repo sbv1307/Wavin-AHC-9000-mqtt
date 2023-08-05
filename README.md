@@ -3,9 +3,9 @@
 
 A Esp8266 mqtt interface for more Wavin AHC-9000 controllers connected together and controlled by one Wavin display.
 
-The goal is to be able to control the Wavin AHC 9000 heating controllers from [Home Assistant](https://www.home-assistant.io/), and still be able to use the Wavin display as well.
+The goal is to be able to control the Wavin AHC 9000 heating controllers from [Home Assistant](https://www.home-assistant.io/) (HA), and still be able to use the Wavin display as well.
 
-The origilan goal of being able to controle the Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org/), has been abandoned because I gave up finding an automated MQTT intgegration in OpenHAB.
+The origilan goal of being able to controle the Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org/), has been abandoned because I gave up finding a discovery function for MQTT integrations, like the one in HA.
 
 ### **Current project status**
 In the current version, the Esp8266 mqtt interface will controle one or more Wavin AHC-9000 controllers. The Wavin AHC-9000 controllers are initial installed and configured using the Wavin display, which configures each controller's MOC-BUS device number.
@@ -48,8 +48,7 @@ upload_port = <IP Address of NodeMCU>
 
 - Raspberry Pi model B v1.2. Installed with Raspberry Pi OS Lite (32-bit) <span id="a1">[[1]](#f1)</span>.
 - Internet access.
-- Raspberry Pi hardened <span id="a2">[[2]](#f2)</span>.
-- Docker Engin and Docker Compose installed <span id="a3">[[3]](#f3)</span>.
+- Docker Engin and Docker Compose installed <span id="a2">[[2]](#f2)</span>.
 
 
 ### **Create docker-compose file**
@@ -126,6 +125,4 @@ docker-compose up -d
 =======
 ###### 1. <span id="f1"></span> See document: [Setting up and configure Raspberry Pi 3 MODEL B+ for the Docker Traefik router project](./docs/SettingUpRaspberryPi.md). [$\hookleftarrow$](#a1)
 
-###### 2. <span id="f2"></span> See document [Hardening Raspberry Pi 3 MODEL B+ for the Docker Traefik router project](./docs/HardeningRaspberryPi.md)[$\hookleftarrow$](#a2)
-
-###### 3. <span id="f3"></span> See document [Install Docker Engin and Docker Compose](./docs/InstallDockerEnginAndCompose.md)[$\hookleftarrow$](#a3)
+###### 2. <span id="f2"></span> See document [Install Docker Engin and Docker Compose](./docs/InstallDockerEnginAndCompose.md)[$\hookleftarrow$](#a3)
