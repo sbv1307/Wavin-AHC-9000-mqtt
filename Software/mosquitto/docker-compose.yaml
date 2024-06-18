@@ -13,7 +13,8 @@ services:
     ports:
       - 1883:1883
     volumes:
-      - /home/pi/mosquitto/config:/mosquitto/config
+      - C:\Users\Steen\Documents\3-MyOtherDocuments\Projects\Wavin-AHC-9000-mqtt\Software\mosquitto\config:/mosquitto/config
+#      - /home/pi/mosquitto/config:/mosquitto/config
       - mosquitto-data:/mosquitto/data
       - mosquitto-log:/mosquitto/log
 
