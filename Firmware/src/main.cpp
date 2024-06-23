@@ -4,7 +4,7 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.8"
+#define SKTECH_VERSION "Esp8266 MQTT interface - V0.0.9"
 
 #define ALT_LED_BUILTIN 16
 
@@ -40,6 +40,14 @@
  * - Insert WiFi reconnect postpone time
  * - call WiFi.disconnect() before "reconnect" (WiFi.mode(WIFI_STA) og WiFi.begin()
  *  
+ */
+
+/*
+ * ######################################################################################################################################
+ * ######################################################################################################################################
+ *                       V  A  R  I  A  B  L  E      D  E  F  I  N  A  I  T  O  N  S
+ * ######################################################################################################################################
+ * ######################################################################################################################################
  */
 
 // MQTT defines
@@ -95,248 +103,35 @@ const uint16_t LAST_VALUE_UNKNOWN = 0xFFFF;
 
 bool configurationPublished[WavinController::NUMBER_OF_CHANNELS * WavinController::NUMBER_OF_DEVICES];
 
-/* Delayfunction, which call ArduinoOTA.handle() 'iterations' number of times to create a delay, 
- * and at the same time opens for OTA updates during the "delay"
+/* ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
+ * ##########################    F U N C T I O N    D E C L A R A T I O N S    ##############################
+ * ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
+*/
+void delayForOAT(uint16_t);
+uint16_t temperatureFromString(String);
+String temperatureAsFloatString(uint16_t);
+uint8_t getIdFromTopic(char*);
+uint8_t getModbusDeviceFromTopic(char*);
+void publishIfNewValue(String, String, uint16_t, uint16_t*);
+void readSetpoint( uint8_t, uint8_t, uint16_t registers[11]);
+void mqttCallback(char*, byte*, unsigned int);
+void resetLastSentValues();
+void publishConfiguration(uint8_t device, uint8_t channel);
+
+/* ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
+ * ################################   S E T U P     B E G I N   ###########################################
+ * ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
  */
-void delayForOAT(uint16_t iterations)
-{
-  for ( uint16_t ii = 0; ii < iterations ; ii++)
-  {
-    if (WiFi.status() == WL_CONNECTED)
-    {
-      // Check for over the air update request and (if present) flash it
-      ArduinoOTA.handle();
-    }
-  }
-}
-
-// Read a float value from a non zero terminated array of bytes and
-// return 10 times the value as an integer
-uint16_t temperatureFromString(String payload)
-{
-  float targetf = payload.toFloat();
-  return (unsigned short)(targetf * 10);
-}
-
-
-// Returns temperature in degrees with one decimal
-String temperatureAsFloatString(uint16_t temperature)
-{
-  float temperatureAsFloat = ((float)temperature) / 10;
-  return String(temperatureAsFloat, 1);
-}
-
-
-uint8_t getIdFromTopic(char* topic)
-{
-  unsigned int startIndex = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/").length();
-  int i = 0;
-  uint8_t result = 0;
-
-  // The topic now includes a number, defining the heat controller / Device. This number will now be found at topic[startIndex].
-  // To filter out Modbus Device number - the easy (and dirty way): device number will be one character. Plus the seperator (/) makes it two chars.
-  // So - Increasing startIndex by 2, will point at the ID we are looking for.
-  startIndex += 2;
-
-  while(topic[startIndex + i] != '/' && i<3)
-  {
-    result = result * 10 + (topic[startIndex+i]-'0');
-    i++;
-  }
-
-  return result;
-}
-
-uint8_t getModbusDevideFromTopic(char* topic)
-{
-  unsigned int startIndex = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/").length();
-  int i = 0;
-  uint8_t result = 0;
-
-  while(topic[startIndex+i] != '/' && i<3)
-  {
-    result = result * 10 + (topic[startIndex+i]-'0');
-    i++;
-  }
-
-  return result;
-}
-
-void publishIfNewValue(String topic, String payload, uint16_t newValue, uint16_t *lastSentValue)
-{
-  if (newValue != *lastSentValue)
-  {
-    if (mqttClient.publish(topic.c_str(), payload.c_str(), true))
-    {
-        *lastSentValue = newValue;
-    }
-    else
-    {
-      *lastSentValue = LAST_VALUE_UNKNOWN;
-    }
-  }
-}
-
-void readSetpoint( uint8_t device, uint8_t channel, uint16_t registers[11])
-{
-
-  if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 1, registers))
-  {
-    uint16_t setpoint = registers[0];
-    
-    String topic = String( MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
-    String payload = temperatureAsFloatString(setpoint);
-
-    publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint));
-  }
-
-
-}
-
-void mqttCallback(char* topic, byte* payload, unsigned int length)
-{
-  String topicString = String(topic);
-
-  char terminatedPayload[length+1];
-  for(unsigned int i=0; i<length; i++)
-  {
-    terminatedPayload[i] = payload[i];
-  }
-  terminatedPayload[length] = 0;
-  String payloadString = String(terminatedPayload);
-
-  uint8_t id = getIdFromTopic(topic);
-
-  uint8_t modbusDevice = getModbusDevideFromTopic(topic);
-
-  // Force re-read of registers from controller  
-  lastUpdateTime = 0;
-
-  if(topicString.endsWith(MQTT_SUFFIX_SETPOINT_SET))
-  {
-    uint16_t target = temperatureFromString(payloadString);
-    wavinController.writeRegister(
-      MODBUS_DEVICES[modbusDevice], 
-      WavinController::CATEGORY_PACKED_DATA, 
-      id, 
-      WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 
-      target);
-
-    delayForOAT(1000);
-
-    uint16_t registers[11];
-    if (wavinController.readRegisters(MODBUS_DEVICES[modbusDevice], WavinController::CATEGORY_CHANNELS, id, WavinController::CHANNELS_PRIMARY_ELEMENT, 1, registers))
-    {
-      delayForOAT(1000);
-
-      readSetpoint( modbusDevice, id, registers);
-    }
-    
-  }
-  else if(topicString.endsWith(MQTT_SUFFIX_MODE_SET))
-  {
-    if(payloadString == MQTT_VALUE_MODE_MANUAL) 
-    {
-      wavinController.writeMaskedRegister(
-        MODBUS_DEVICES[modbusDevice],
-        WavinController::CATEGORY_PACKED_DATA,
-        id,
-        WavinController::PACKED_DATA_CONFIGURATION,
-        WavinController::PACKED_DATA_CONFIGURATION_MODE_MANUAL,
-        ~WavinController::PACKED_DATA_CONFIGURATION_MODE_MASK);
-    }
-    else if (payloadString == MQTT_VALUE_MODE_STANDBY)
-    {
-      wavinController.writeMaskedRegister(
-        MODBUS_DEVICES[modbusDevice],
-        WavinController::CATEGORY_PACKED_DATA, 
-        id, 
-        WavinController::PACKED_DATA_CONFIGURATION, 
-        WavinController::PACKED_DATA_CONFIGURATION_MODE_STANDBY, 
-        ~WavinController::PACKED_DATA_CONFIGURATION_MODE_MASK);
-    }
-  }
-  
-}
-
-
-void resetLastSentValues()
-{
-  for(int8_t i = 0; i < (WavinController::NUMBER_OF_CHANNELS * WavinController::NUMBER_OF_DEVICES); i++)
-  {
-    lastSentValues[i].temperature = LAST_VALUE_UNKNOWN;
-    lastSentValues[i].setpoint = LAST_VALUE_UNKNOWN;
-    lastSentValues[i].battery = LAST_VALUE_UNKNOWN;
-    lastSentValues[i].status = LAST_VALUE_UNKNOWN;
-    lastSentValues[i].mode = LAST_VALUE_UNKNOWN;
-
-    configurationPublished[i] = false;
-  }
-}
-
-
-
-// Publish discovery messages for HomeAssistant
-// See https://www.home-assistant.io/docs/mqtt/discovery/
-void publishConfiguration(uint8_t device, uint8_t channel)
-{
-  /*
-   * Homeassistand discovery topic needs to follow a specific format: <discovery_prefix>/<component>/[<node_id>/]<object_id>/config
-   * To get a <object_id> form <device> and <channel> I decidec to combine this as "(device * 100) + channel"
-   * So e.g. homeassistant/climate/floorXXXXXXXXXXXX/1/3/config will change to homeassistant/climate/floorXXXXXXXXXXXX/103/config
-   * That made discovery of things work in OpebHAB, but the discovery of channels did not.
-   */
-
-  uint8_t device_channel = (device * 100) + channel;
-  String room = String(rooms[(ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel]);
-  
-  String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
-  String climateMessage = String(
-    "{\"name\": \"" + room + "\", "
-    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate_id\", "
-    "\"action_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_OUTPUT + "\", " 
-    "\"current_temperature_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_CURRENT + "\", " 
-    "\"temperature_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac  + "/" + device+ "/" + channel + MQTT_SUFFIX_SETPOINT_SET + "\", " 
-    "\"temperature_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET + "\", " 
-    "\"mode_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_SET + "\", " 
-    "\"mode_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_GET + "\", " 
-    "\"modes\": [\"" + MQTT_VALUE_MODE_MANUAL + "\", \"" + MQTT_VALUE_MODE_STANDBY + "\"], " 
-    "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
-    "\"payload_available\": \"True\", "
-    "\"payload_not_available\": \"False\", "
-    "\"min_temp\": \"" + String(MIN_TEMP, 1) + "\", "
-    "\"max_temp\": \"" + String(MAX_TEMP, 1) + "\", "
-    "\"temp_step\": \"" + String(TEMP_STEP, 1) + "\", "
-    "\"qos\": \"0\"}"
-  );
-  
-  String Battery = "Batteri på rumtermostat i ";
-  String batteryTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
-  String batteryMessage = String(
-    "{\"name\": \"" + Battery + room + "\", "
-    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_battery_id\", "
-    "\"state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/battery\", " 
-    "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
-    "\"payload_available\": \"True\", "
-    "\"payload_not_available\": \"False\", "
-    "\"device_class\": \"battery\", "
-    "\"unit_of_measurement\": \"%\", "
-    "\"qos\": \"0\"}"
-  );
-
-  mqttClient.publish(climateTopic.c_str(), climateMessage.c_str(), true);  
-  mqttClient.publish(batteryTopic.c_str(), batteryMessage.c_str(), true);
-  
-  configurationPublished[ (device * WavinController::NUMBER_OF_CHANNELS) + channel] = true;
-}
-
-/***************************************************************************************************************
- ***************************************************************************************************************
- ***************************************************************************************************************
- ******************************   S E T U P     B E G I N ****************************************************** 
- ***************************************************************************************************************
- ***************************************************************************************************************
- ***************************************************************************************************************/
 void setup()
 {
   pinMode(ALT_LED_BUILTIN, OUTPUT);  // Initialize the LED pin as an output
@@ -360,15 +155,14 @@ void setup()
    */
   ArduinoOTA.begin();
 }
-
-/***************************************************************************************************************
- ***************************************************************************************************************
- ***************************************************************************************************************
- ********************************   L O O P     B E G I N ****************************************************** 
- ***************************************************************************************************************
- ***************************************************************************************************************
- ***************************************************************************************************************/
-
+/* ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
+ * ################################     L O O P    B E G I N    ###########################################
+ * ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
+ */
 void loop()
 {
   if (WiFi.status() != WL_CONNECTED)
@@ -511,3 +305,369 @@ void loop()
     }
   }
 }
+/* ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
+ * #####################   F U N C T I O N    D  E  F  I  N  I  T  I  O  N  S    ##########################
+ * ########################################################################################################
+ * ########################################################################################################
+ * ########################################################################################################
+ */
+
+/* ###################################################################################################
+ *                                    F U N C T I O N    N A M E
+ * ###################################################################################################
+ * fundction()
+ * Description:
+ * Syntax: 
+ * Parameters:
+ *  -  
+ * Returns: 
+ */
+
+
+/* ###################################################################################################
+ *                                    D E L A Y   F O R   O A T
+ * ###################################################################################################
+ * delayForOAT()
+ * Description: Alternative to delay(). Pauses the program for the amount of time, the time it takes
+ *              to call ArduinoOTA.handle() a number of times, specified as parameter.
+ *              The functino makes it possible to OTA during a delay.
+ * Syntax: delayForOAT(iterations)
+ * Parameters:
+ *  - iterations: the number of times ArduinoOTA.handle() is called to create a delay
+ * Returns: Nothing
+ */
+
+void delayForOAT(uint16_t iterations)
+{
+  for ( uint16_t ii = 0; ii < iterations ; ii++)
+  {
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      // Check for over the air update request and (if present) flash it
+      ArduinoOTA.handle();
+    }
+  }
+}
+
+/* ###################################################################################################
+ *                T E M P E R A T U R E   F R O M   S T R I N G
+ * ###################################################################################################
+ * temperatureFromString()
+ * Description: Read a float value from a non zero terminated array of bytes and 
+ *              return 10 times the value as an integer
+ * Syntax: temperatureFromString( thisString)
+ * Parameters:
+ *  - thisString: Floatvalue represented in a string.
+ * Returns: The float value as an integer, multiplied by 10. 
+ */
+
+uint16_t temperatureFromString(String payload)
+{
+  float targetf = payload.toFloat();
+  return (unsigned short)(targetf * 10);
+}
+
+/* ###################################################################################################
+ *                       T E M P E R A T U R E   A S   F L O A T   S T R I N G
+ * ###################################################################################################
+ * temperatureAsFloatString()
+ * Description: Transform an intergervalue, representing a temperature with one decimal, to a foat
+ *              with one decimal
+ * Syntax: temperatureAsFloatString(temperatureAsInteger)
+ * Parameters:
+ *  - temperatureAsInteger: An integer representation of a temperature having one decimal.
+ * Returns: Temperature in degrees with one decimal
+ */
+
+// Returns temperature in degrees with one decimal
+String temperatureAsFloatString(uint16_t temperature)
+{
+  float temperatureAsFloat = ((float)temperature) / 10;
+  return String(temperatureAsFloat, 1);
+}
+
+/* ###################################################################################################
+ *                      G E T    I D    F R O M   T O P I C
+ * ###################################################################################################
+ * getIdFromTopic()
+ * Description: Get the room thermostat ID number from the topic string.
+ * Syntax: getIdFromTopic(thisTopic)
+ * Parameters:
+ *  -  thisTopic: A chararray in the form [MQTT_PREFIX + mqttDeviceNameWithMac + "/" + ModbusDevice + "/" + ID +"/#"]
+ * Returns: Room thermostat ID number
+ */
+uint8_t getIdFromTopic(char* topic)
+{
+  unsigned int startIndex = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/").length();
+  int i = 0;
+  uint8_t result = 0;
+
+  // The topic now includes a number, defining the heat controller / Device. This number will now be found at topic[startIndex].
+  // To filter out Modbus Device number - the easy (and dirty way): device number will be one character. Plus the seperator (/) makes it two chars.
+  // So - Increasing startIndex by 2, will point at the ID we are looking for.
+  startIndex += 2;
+
+  while(topic[startIndex + i] != '/' && i<3)
+  {
+    result = result * 10 + (topic[startIndex+i]-'0');
+    i++;
+  }
+
+  return result;
+}
+
+/* ###################################################################################################
+ *                     G E T   M O D B U S    D E V I C E    F R O M    T O P I C 
+ * ###################################################################################################
+ * getModbusDeviceFromTopic()
+ * Description: Get the Modbus device (AHC9000 Control Unit) number from the topic string.
+ * Syntax: getIdFromTopic(thisTopic)
+ * Parameters:
+ *  - thisTopic: A chararray in the form [MQTT_PREFIX + mqttDeviceNameWithMac + "/" + ModbusDevice + "/" + ID +"/#"]
+ * Returns: Modbus device (AHC9000 Control Unit) number
+ */
+
+uint8_t getModbusDeviceFromTopic(char* topic)
+{
+  unsigned int startIndex = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/").length();
+  int i = 0;
+  uint8_t result = 0;
+
+  while(topic[startIndex+i] != '/' && i<3)
+  {
+    result = result * 10 + (topic[startIndex+i]-'0');
+    i++;
+  }
+
+  return result;
+}
+
+/* ###################################################################################################
+ *                              P U B L I S H    I F    N E W    V A L U E
+ * ###################################################################################################
+ * publishIfNewValue()
+ * Description: Publist newValue as (streig)payload, if newValue is != lastSentValue
+ * Syntax: publishIfNewValue(topic, payload, newValue, lastSentValue)
+ * Parameters:
+ *  - topic:        A char array (String) in the form [MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_...]
+ *  - payload       NewValue as a char array (String)
+ *  - newValue      A interger value
+ *  - lastSentValue A pointer to tha last sent value
+ * Returns: Nothing
+ */
+void publishIfNewValue(String topic, String payload, uint16_t newValue, uint16_t *lastSentValue)
+{
+  if (newValue != *lastSentValue)
+  {
+    if (mqttClient.publish(topic.c_str(), payload.c_str(), true))
+    {
+        *lastSentValue = newValue;
+    }
+    else
+    {
+      *lastSentValue = LAST_VALUE_UNKNOWN;
+    }
+  }
+}
+
+
+/* ###################################################################################################
+ *                                  R E A D    S E T    P O I N T 
+ * ###################################################################################################
+ * readSetpoint()
+ * Description: Read setpoint from Wavin controller at publish setpoint to MQTT
+ * Syntax: readSetpoint( device, channel, registers)
+ * Parameters:
+ *  - device:       Modbus device (AHC9000 Control Unit) number
+ *  - channel:      Thermostat ID number
+ *  - registers:    
+ * Returns: Nothing
+ */
+void readSetpoint( uint8_t device, uint8_t channel, uint16_t registers[11])
+{
+
+  if (wavinController.readRegisters(MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 1, registers))
+  {
+    uint16_t setpoint = registers[0];
+    
+    String topic = String( MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
+    String payload = temperatureAsFloatString(setpoint);
+
+    publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (device * WavinController::NUMBER_OF_CHANNELS) + channel].setpoint));
+  }
+
+
+}
+
+
+/* ###################################################################################################
+ *                         M Q T T    C A L L    B A C K
+ * ###################################################################################################
+ * mqttCallback()
+ * Description: Called when MQTT message arrive
+ * Syntax:        mqttCallback(* topic,* payload, length)
+ * Parameters:
+ *  - * topic:
+ *  - * payload:
+ *  - length
+ * Returns: Nothing
+ */
+void mqttCallback(char* topic, byte* payload, unsigned int length)
+{
+  String topicString = String(topic);
+
+  char terminatedPayload[length+1];
+  for(unsigned int i=0; i<length; i++)
+  {
+    terminatedPayload[i] = payload[i];
+  }
+  terminatedPayload[length] = 0;
+  String payloadString = String(terminatedPayload);
+
+  uint8_t id = getIdFromTopic(topic);
+
+  uint8_t modbusDevice = getModbusDeviceFromTopic(topic);
+
+  // Force re-read of registers from controller  
+  lastUpdateTime = 0;
+
+  if(topicString.endsWith(MQTT_SUFFIX_SETPOINT_SET))
+  {
+    uint16_t target = temperatureFromString(payloadString);
+    wavinController.writeRegister(
+      MODBUS_DEVICES[modbusDevice], 
+      WavinController::CATEGORY_PACKED_DATA, 
+      id, 
+      WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 
+      target);
+
+    delayForOAT(1000);
+
+    uint16_t registers[11];
+    if (wavinController.readRegisters(MODBUS_DEVICES[modbusDevice], WavinController::CATEGORY_CHANNELS, id, WavinController::CHANNELS_PRIMARY_ELEMENT, 1, registers))
+    {
+      delayForOAT(1000);
+
+      readSetpoint( modbusDevice, id, registers);
+    }
+    
+  }
+  else if(topicString.endsWith(MQTT_SUFFIX_MODE_SET))
+  {
+    if(payloadString == MQTT_VALUE_MODE_MANUAL) 
+    {
+      wavinController.writeMaskedRegister(
+        MODBUS_DEVICES[modbusDevice],
+        WavinController::CATEGORY_PACKED_DATA,
+        id,
+        WavinController::PACKED_DATA_CONFIGURATION,
+        WavinController::PACKED_DATA_CONFIGURATION_MODE_MANUAL,
+        ~WavinController::PACKED_DATA_CONFIGURATION_MODE_MASK);
+    }
+    else if (payloadString == MQTT_VALUE_MODE_STANDBY)
+    {
+      wavinController.writeMaskedRegister(
+        MODBUS_DEVICES[modbusDevice],
+        WavinController::CATEGORY_PACKED_DATA, 
+        id, 
+        WavinController::PACKED_DATA_CONFIGURATION, 
+        WavinController::PACKED_DATA_CONFIGURATION_MODE_STANDBY, 
+        ~WavinController::PACKED_DATA_CONFIGURATION_MODE_MASK);
+    }
+  }
+  
+}
+
+
+/* ###################################################################################################
+ *                     R E S E T    L A S T    S E N T    V A L U E S
+ * ###################################################################################################
+ * resetLastSentValues()
+ * Description: Resetting last sent values
+ * Syntax: resetLastSentValues()
+ * Parameters: none
+ * Returns: Global variabes set to LAST_VALUE_UNKNOWN
+ */
+void resetLastSentValues()
+{
+  for(int8_t i = 0; i < (WavinController::NUMBER_OF_CHANNELS * WavinController::NUMBER_OF_DEVICES); i++)
+  {
+    lastSentValues[i].temperature = LAST_VALUE_UNKNOWN;
+    lastSentValues[i].setpoint = LAST_VALUE_UNKNOWN;
+    lastSentValues[i].battery = LAST_VALUE_UNKNOWN;
+    lastSentValues[i].status = LAST_VALUE_UNKNOWN;
+    lastSentValues[i].mode = LAST_VALUE_UNKNOWN;
+
+    configurationPublished[i] = false;
+  }
+}
+
+
+/* ###################################################################################################
+ *                       P U B L I S H    C O N F I G U R A T I O N
+ * ###################################################################################################
+ * publishConfiguration()
+ * Description: Publish discovery messages for HomeAssistant
+ *              See https://www.home-assistant.io/docs/mqtt/discovery/
+ * Syntax: publishConfiguration( device, channel)
+ * Parameters:
+ *  - device:
+ *  - channel
+ * Returns: 
+ */
+// 
+// 
+void publishConfiguration(uint8_t device, uint8_t channel)
+{
+  /*
+   * Homeassistand discovery topic needs to follow a specific format: <discovery_prefix>/<component>/[<node_id>/]<object_id>/config
+   * To get a <object_id> form <device> and <channel> I decidec to combine this as "(device * 100) + channel"
+   * So e.g. homeassistant/climate/floorXXXXXXXXXXXX/1/3/config will change to homeassistant/climate/floorXXXXXXXXXXXX/103/config
+   * That made discovery of things work in OpebHAB, but the discovery of channels did not.
+   */
+
+  uint8_t device_channel = (device * 100) + channel;
+  String room = String(rooms[(ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel]);
+  
+  String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
+  String climateMessage = String(
+    "{\"name\": \"" + room + "\", "
+    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate_id\", "
+    "\"action_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_OUTPUT + "\", " 
+    "\"current_temperature_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_CURRENT + "\", " 
+    "\"temperature_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac  + "/" + device+ "/" + channel + MQTT_SUFFIX_SETPOINT_SET + "\", " 
+    "\"temperature_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET + "\", " 
+    "\"mode_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_SET + "\", " 
+    "\"mode_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_GET + "\", " 
+    "\"modes\": [\"" + MQTT_VALUE_MODE_MANUAL + "\", \"" + MQTT_VALUE_MODE_STANDBY + "\"], " 
+    "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
+    "\"payload_available\": \"True\", "
+    "\"payload_not_available\": \"False\", "
+    "\"min_temp\": \"" + String(MIN_TEMP, 1) + "\", "
+    "\"max_temp\": \"" + String(MAX_TEMP, 1) + "\", "
+    "\"temp_step\": \"" + String(TEMP_STEP, 1) + "\", "
+    "\"qos\": \"0\"}"
+  );
+  
+  String Battery = "Batteri på rumtermostat i ";
+  String batteryTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
+  String batteryMessage = String(
+    "{\"name\": \"" + Battery + room + "\", "
+    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_battery_id\", "
+    "\"state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/battery\", " 
+    "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
+    "\"payload_available\": \"True\", "
+    "\"payload_not_available\": \"False\", "
+    "\"device_class\": \"battery\", "
+    "\"unit_of_measurement\": \"%\", "
+    "\"qos\": \"0\"}"
+  );
+
+  mqttClient.publish(climateTopic.c_str(), climateMessage.c_str(), true);  
+  mqttClient.publish(batteryTopic.c_str(), batteryMessage.c_str(), true);
+  
+  configurationPublished[ (device * WavinController::NUMBER_OF_CHANNELS) + channel] = true;
+}
+
