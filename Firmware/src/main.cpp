@@ -34,12 +34,6 @@
  * Instead of waiting for the iteration process to finally get the target temperature changed, call the process for readng the setpont dirctly from the 
  * MQTT callback function.
  * 
- * ISSUES:
- * - SKTECH_VERSION "Esp8266 MQTT interface" needs to be mor specific "Esp8266 MQTT Wavin AHC 9000 interface"
- * - Publish IP address to MQTT
- * - Insert WiFi reconnect postpone time
- * - call WiFi.disconnect() before "reconnect" (WiFi.mode(WIFI_STA) og WiFi.begin()
- *  
  */
 
 /*
