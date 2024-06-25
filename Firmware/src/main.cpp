@@ -4,7 +4,7 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.0.9"
+#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.0.10"
 
 #define ALT_LED_BUILTIN 16
 
@@ -34,6 +34,7 @@
  * Instead of waiting for the iteration process to finally get the target temperature changed, call the process for readng the setpont dirctly from the 
  * MQTT callback function.
  * 
+ * Issues now documented on github
  */
 
 /*
@@ -44,6 +45,11 @@
  * ######################################################################################################################################
  */
 
+#define WIFI_CONNECT_POSTPONE 30000     // Number of millis between WiFi connect attempts, when WiFi.begin fails to connect.
+#define MQTT_CONNECT_POSTPONE 30000     // Number of millisecunds between MQTT connect dattempts, when MQTT connect fails to connect.
+
+#define RETAINED true                   // Used in MQTT puplications. Can be changed during development and bugfixing.
+
 // MQTT defines
 // Esp8266 MAC will be added to the device name, to ensure unique topics
 // Default is topics like 'heat/floorXXXXXXXXXXXX/1/3/target', where 1 is the Modbus Device number and 3 is the output id and XXXXXXXXXXXX is the mac
@@ -51,6 +57,7 @@
 const String   MQTT_PREFIX              = "heat/";       // include tailing '/' in prefix
 const String   MQTT_DEVICE_NAME         = "floor";       // only alfanumeric and no '/'
 const String   MQTT_ONLINE              = "/online";      
+const String   MQTT_SKTECH_VERSION      = "/sketch_version";
 const String   MQTT_SUFFIX_CURRENT      = "/current";    // include heading '/' in all suffixes
 const String   MQTT_SUFFIX_SETPOINT_GET = "/target";
 const String   MQTT_SUFFIX_SETPOINT_SET = "/target_set";
@@ -81,6 +88,13 @@ WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 unsigned long lastUpdateTime = 0;
+
+/* Wariables to handle connect postpone */
+unsigned long WiFiConnectAttempt = 0;   // Timestamp when an attempt to connect to WiFi were done
+unsigned long MQTTConnectAttempt = 0;   // Timestamp when an attempt to connect to MQtT were done
+
+unsigned long WiFiConnectPostpone = 0;  // Millisecunds between each attempt to connect to WiFi.
+unsigned long MQTTConnectPostpone = 0;  // Millisecunds between each attempt to connect to MQTT.
 
 const uint16_t POLL_TIME_MS = 5000;
 
@@ -117,6 +131,7 @@ void readSetpoint( uint8_t, uint8_t, uint16_t registers[11]);
 void mqttCallback(char*, byte*, unsigned int);
 void resetLastSentValues();
 void publishConfiguration(uint8_t device, uint8_t channel);
+void publish_sketch_version();
 
 /* ########################################################################################################
  * ########################################################################################################
@@ -159,13 +174,25 @@ void setup()
  */
 void loop()
 {
-  if (WiFi.status() != WL_CONNECTED)
+  if (WiFi.status() != WL_CONNECTED and millis() > WiFiConnectAttempt + WiFiConnectPostpone)
   {
     digitalWrite(ALT_LED_BUILTIN, LOW);  // Turn ON the LED to indicate WL connections is lost.
+    
+    WiFi.disconnect();
     WiFi.mode(WIFI_STA);
     WiFi.begin(WIFI_SSID.c_str(), WIFI_PASS.c_str());
 
-    if (WiFi.waitForConnectResult() != WL_CONNECTED) return;
+    if (WiFi.waitForConnectResult() != WL_CONNECTED)
+    {
+      WiFiConnectAttempt = millis();
+      WiFiConnectPostpone = WIFI_CONNECT_POSTPONE;
+      return;
+    } 
+    else
+    {
+      WiFiConnectAttempt = 0;   // In case WiFi is lost, attempt to reconnect immediatly. 
+      WiFiConnectPostpone = 0;
+    }
   }
 
   if (WiFi.status() == WL_CONNECTED)
@@ -174,25 +201,32 @@ void loop()
     ArduinoOTA.handle();
   
     digitalWrite(ALT_LED_BUILTIN, HIGH);  // Turn the LED off to indicate WL is connected
-    if (!mqttClient.connected())
+    if (!mqttClient.connected() and millis() > MQTTConnectAttempt + MQTTConnectPostpone )
     {
       String will = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE);
       if (mqttClient.connect(mqttClientWithMac.c_str(), MQTT_USER.c_str(), MQTT_PASS.c_str(), will.c_str(), 1, true, "False") )
       {
-          String setpointSetTopic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/+/+" + MQTT_SUFFIX_SETPOINT_SET);
-          mqttClient.subscribe(setpointSetTopic.c_str(), 1);
-          
-          String modeSetTopic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/+/+" + MQTT_SUFFIX_MODE_SET);
-          mqttClient.subscribe(modeSetTopic.c_str(), 1);
-          
-          mqttClient.publish(will.c_str(), (const uint8_t *)"True", 4, true);
+        MQTTConnectAttempt = 0;
+        MQTTConnectPostpone = 0;
 
-          // Forces resending of all parameters to server
-          resetLastSentValues();
+        publish_sketch_version();
+
+        String setpointSetTopic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/+/+" + MQTT_SUFFIX_SETPOINT_SET);
+        mqttClient.subscribe(setpointSetTopic.c_str(), 1);
+        
+        String modeSetTopic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/+/+" + MQTT_SUFFIX_MODE_SET);
+        mqttClient.subscribe(modeSetTopic.c_str(), 1);
+        
+        mqttClient.publish(will.c_str(), (const uint8_t *)"True", 4, RETAINED);
+
+        // Forces resending of all parameters to server
+        resetLastSentValues();
       }
       else
       {
-          return;
+        MQTTConnectAttempt = millis();
+        MQTTConnectPostpone = MQTT_CONNECT_POSTPONE;
+        return;
       }
     }
   
@@ -455,7 +489,7 @@ void publishIfNewValue(String topic, String payload, uint16_t newValue, uint16_t
 {
   if (newValue != *lastSentValue)
   {
-    if (mqttClient.publish(topic.c_str(), payload.c_str(), true))
+    if (mqttClient.publish(topic.c_str(), payload.c_str(), RETAINED))
     {
         *lastSentValue = newValue;
     }
@@ -659,9 +693,30 @@ void publishConfiguration(uint8_t device, uint8_t channel)
     "\"qos\": \"0\"}"
   );
 
-  mqttClient.publish(climateTopic.c_str(), climateMessage.c_str(), true);  
-  mqttClient.publish(batteryTopic.c_str(), batteryMessage.c_str(), true);
+  mqttClient.publish(climateTopic.c_str(), climateMessage.c_str(), RETAINED);  
+  mqttClient.publish(batteryTopic.c_str(), batteryMessage.c_str(), RETAINED);
   
   configurationPublished[ (device * WavinController::NUMBER_OF_CHANNELS) + channel] = true;
 }
 
+/* ###################################################################################################
+ *                  P U B L I S H   S K E T C H   V E R S I O N
+ * ###################################################################################################
+ *  As the sketch will esecute in silence, one way to se which version of the SW is running will be
+ *  to subscribe to topic defined as (MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_SKTECH_VERSION)
+ *  on the MQTT broker, configured in the privateConfig.h file.
+ *  This will return the value of (SKETCH_VERSION)
+ */
+void publish_sketch_version()   // Publish only once at every reboot.
+{  
+  IPAddress ip = WiFi.localIP();
+  String versionTopic = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_SKTECH_VERSION);
+  String versionMessage = String(SKTECH_VERSION + String("\nConnected to SSID: \'") +\
+                                  String(WIFI_SSID) + String("\' at: ") +\
+                                  String(ip[0]) + String(".") +\
+                                  String(ip[1]) + String(".") +\
+                                  String(ip[2]) + String(".") +\
+                                  String(ip[3]));
+
+  mqttClient.publish(versionTopic.c_str(), versionMessage.c_str(), RETAINED);
+}

@@ -112,9 +112,10 @@ docker-compose up -d
 | FW    | main.cpp            | 0.0.6   | Implementing OTA update.
 | FW    | main.cpp            | 0.0.7   | OTA and temerature setting issues.
 | FW    | main.cpp & PrivateConfig.h | 0.0.8   | Configurable names for chanels added to PrivateConfig.h and implemented in mail.cpp
-| FW    | main.cpp            | 0.0.9 | Re-arrange code structure. Insert function definitions, startup() and loot() in beginning. 
+| FW    | main.cpp            | 0.0.9 | Re-arrange code structure. Insert function definitions, startup() and loot() in beginning.
+| FW    | main.cpp            | 0.0.10 | #4: Insert WiFi reconnect postpone time <br>#5: call WiFi.disconnect() before "reconnect" (WiFi.mode(WIFI_STA) og WiFi.begin() <br>#2: Publish device info to MQTT broker
 
-
+###### "#n" Refers to github issue number
 
 
 
