@@ -1,3 +1,4 @@
+#include <ArduinoJson.h>
 #include <ArduinoOTA.h>
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
@@ -235,7 +236,7 @@ void loop()
     {
         return;
     }
-
+    
 
     if (lastUpdateTime + POLL_TIME_MS < millis())
     {
@@ -650,51 +651,61 @@ void resetLastSentValues()
 void publishConfiguration(uint8_t device, uint8_t channel)
 {
   /*
-   * Homeassistand discovery topic needs to follow a specific format: <discovery_prefix>/<component>/[<node_id>/]<object_id>/config
+   * Home Assistand discovery topic need to follow a specific format: <discovery_prefix>/<component>/[<node_id>/]<object_id>/config
    * To get a <object_id> form <device> and <channel> I decidec to combine this as "(device * 100) + channel"
-   * So e.g. homeassistant/climate/floorXXXXXXXXXXXX/1/3/config will change to homeassistant/climate/floorXXXXXXXXXXXX/103/config
-   * That made discovery of things work in OpebHAB, but the discovery of channels did not.
+   * So e.g. configuration for device 1 channel 3 will be homeassistant/climate/floorXXXXXXXXXXXX/103/config
+   * 
    */
+  uint8_t payload[1024];
+  JsonDocument climateDoc;
+  JsonDocument sensorDoc;
 
   uint8_t device_channel = (device * 100) + channel;
+
   String room = String(rooms[(ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel]);
   
-  String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
-  String climateMessage = String(
-    "{\"name\": \"" + room + "\", "
-    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate_id\", "
-    "\"action_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_OUTPUT + "\", " 
-    "\"current_temperature_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_CURRENT + "\", " 
-    "\"temperature_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac  + "/" + device+ "/" + channel + MQTT_SUFFIX_SETPOINT_SET + "\", " 
-    "\"temperature_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET + "\", " 
-    "\"mode_command_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_SET + "\", " 
-    "\"mode_state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_GET + "\", " 
-    "\"modes\": [\"" + MQTT_VALUE_MODE_MANUAL + "\", \"" + MQTT_VALUE_MODE_STANDBY + "\"], " 
-    "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
-    "\"payload_available\": \"True\", "
-    "\"payload_not_available\": \"False\", "
-    "\"min_temp\": \"" + String(MIN_TEMP, 1) + "\", "
-    "\"max_temp\": \"" + String(MAX_TEMP, 1) + "\", "
-    "\"temp_step\": \"" + String(TEMP_STEP, 1) + "\", "
-    "\"qos\": \"0\"}"
-  );
-  
-  String Battery = "Batteri på rumtermostat i ";
-  String batteryTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
-  String batteryMessage = String(
-    "{\"name\": \"" + Battery + room + "\", "
-    "\"unique_id\": \"" + mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_battery_id\", "
-    "\"state_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/battery\", " 
-    "\"availability_topic\": \"" + MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE +"\", "
-    "\"payload_available\": \"True\", "
-    "\"payload_not_available\": \"False\", "
-    "\"device_class\": \"battery\", "
-    "\"unit_of_measurement\": \"%\", "
-    "\"qos\": \"0\"}"
-  );
+  climateDoc["name"] = room;
+  climateDoc["unique_id"] = String(mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate_id");
+  climateDoc["action_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_OUTPUT);
+  climateDoc["current_temperature_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_CURRENT);
+  climateDoc["temperature_command_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_SET);
+  climateDoc["temperature_state_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
+  climateDoc["mode_command_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_SET);
+  climateDoc["mode_state_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_MODE_GET);
 
-  mqttClient.publish(climateTopic.c_str(), climateMessage.c_str(), RETAINED);  
-  mqttClient.publish(batteryTopic.c_str(), batteryMessage.c_str(), RETAINED);
+  climateDoc["modes"][0] = String(MQTT_VALUE_MODE_MANUAL);
+  climateDoc["modes"][1] = String(MQTT_VALUE_MODE_STANDBY);
+  
+  climateDoc["availability_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE);
+  climateDoc["payload_available"] = "True";
+  climateDoc["payload_not_available"] = "False";
+  climateDoc["min_temp"] = String(MIN_TEMP, 1);
+  climateDoc["max_temp"] = String(MAX_TEMP, 1);
+  climateDoc["temp_step"] = String(TEMP_STEP, 1);
+  climateDoc["qos"] = "0";
+
+  size_t climateLength = serializeJson(climateDoc, payload);
+  String climateTopic = String("homeassistant/climate/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
+
+  mqttClient.publish(climateTopic.c_str(), payload, climateLength, RETAINED);
+
+
+  String Battery = "Batteri på rumtermostat i ";
+
+  sensorDoc["name"] = String(Battery + room);
+  sensorDoc["unique_id"] = String(mqttDeviceNameWithMac + "_" + device + "_" + channel + "_battery_id");
+  sensorDoc["state_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + "/battery");
+  sensorDoc["availability_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE);
+  sensorDoc["payload_available"] = "True";
+  sensorDoc["payload_not_available"] = "False";
+  sensorDoc["device_class"] = "battery";
+  sensorDoc["unit_of_measurement"] = "%";
+  sensorDoc["qos"] = "0";
+
+  size_t sensorlength = serializeJson(sensorDoc, payload);
+  String sensorTopic = String("homeassistant/sensor/" + mqttDeviceNameWithMac + "/" + device_channel + "/config");
+  
+  mqttClient.publish(sensorTopic.c_str(), payload, sensorlength, RETAINED);
   
   configurationPublished[ (device * WavinController::NUMBER_OF_CHANNELS) + channel] = true;
 }
@@ -705,7 +716,7 @@ void publishConfiguration(uint8_t device, uint8_t channel)
  *  As the sketch will esecute in silence, one way to se which version of the SW is running will be
  *  to subscribe to topic defined as (MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_SKTECH_VERSION)
  *  on the MQTT broker, configured in the privateConfig.h file.
- *  This will return the value of (SKETCH_VERSION)
+ *  This will return the value of (SKETCH_VERSION) plus the SSID it is connected to and the IP address.
  */
 void publish_sketch_version()   // Publish only once at every reboot.
 {  
