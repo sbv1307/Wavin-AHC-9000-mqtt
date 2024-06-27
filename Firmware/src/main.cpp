@@ -5,7 +5,7 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.0.10"
+#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.0.11"
 
 #define ALT_LED_BUILTIN 16
 
