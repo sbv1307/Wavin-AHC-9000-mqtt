@@ -114,7 +114,10 @@ docker-compose up -d
 | FW    | main.cpp & PrivateConfig.h | 0.0.8   | Configurable names for chanels added to PrivateConfig.h and implemented in mail.cpp
 | FW    | main.cpp            | 0.0.9 | Re-arrange code structure. Insert function definitions, startup() and loot() in beginning.
 | FW    | main.cpp            | 0.0.10 | #4: Insert WiFi reconnect postpone time <br>#5: call WiFi.disconnect() before "reconnect" (WiFi.mode(WIFI_STA) og WiFi.begin() <br>#2: Publish device info to MQTT broker
-| FW    | mail.cpp            | 0.0.11 | #3: implement Arduino JSON
+| FW    | main.cpp            | 0.0.11 | #3: implement Arduino JSON
+| FW    | main.cpp            | 0.1.0  | #11: millis() overrun: Implementing sec() and change code from using milli seconds, to use secunds for timestamps
+| FW    | main.cpp            | 0.1.1  | #10: Scan only installed sensors
+
 
 ###### "#n" Refers to github issue number
 

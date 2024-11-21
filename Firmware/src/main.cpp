@@ -5,7 +5,7 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.0.11"
+#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.1.0"
 
 #define ALT_LED_BUILTIN 16
 
@@ -19,7 +19,7 @@
  *
  * OTA update:
  * The Esp8266 MQTT interface did not answer to requests.
- * It turned out, that reading all channels took longer than the defined POLL_TIME_MS = 5000, and since lastUpdateTime were updated at the beginning
+ * It turned out, that reading all channels took longer than the defined POLL_TIME_MS = 5000 (Change to POLL_TIME SEC i ver. 0.1.0), and since lastUpdateTime were updated at the beginning
  * of the iteration, the call to ArduinoOTA.handle() were only done once on each loop!
  * Move the update of lastUpdateTime to the end, gave at least a break in scanning the cannels, however it still only gave a short window for the OTA
  * process to establish contace.
@@ -36,6 +36,7 @@
  * MQTT callback function.
  * 
  * Issues now documented on github
+ * Version history documented in README.md
  */
 
 /*
@@ -46,8 +47,8 @@
  * ######################################################################################################################################
  */
 
-#define WIFI_CONNECT_POSTPONE 30000     // Number of millis between WiFi connect attempts, when WiFi.begin fails to connect.
-#define MQTT_CONNECT_POSTPONE 30000     // Number of millisecunds between MQTT connect dattempts, when MQTT connect fails to connect.
+#define WIFI_CONNECT_POSTPONE 30        // Number of secunds between WiFi connect attempts, when WiFi.begin fails to connect.
+#define MQTT_CONNECT_POSTPONE 30        // Number of secunds between MQTT connect dattempts, when MQTT connect fails to connect.
 
 #define RETAINED true                   // Used in MQTT puplications. Can be changed during development and bugfixing.
 
@@ -88,16 +89,16 @@ WavinController wavinController(TX_ENABLE_PIN, SWAP_SERIAL_PINS, RECIEVE_TIMEOUT
 WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
-unsigned long lastUpdateTime = 0;
+unsigned long lastUpdateTime = 0;       // Timestamp in Secunds when channels were read and HA updated.
 
 /* Wariables to handle connect postpone */
-unsigned long WiFiConnectAttempt = 0;   // Timestamp when an attempt to connect to WiFi were done
-unsigned long MQTTConnectAttempt = 0;   // Timestamp when an attempt to connect to MQtT were done
+unsigned long WiFiConnectAttempt = 0;   // Timestamp in Secunds when an attempt to connect to WiFi were done
+unsigned long MQTTConnectAttempt = 0;   // Timestamp in Secunds when an attempt to connect to MQtT were done
 
-unsigned long WiFiConnectPostpone = 0;  // Millisecunds between each attempt to connect to WiFi.
-unsigned long MQTTConnectPostpone = 0;  // Millisecunds between each attempt to connect to MQTT.
+unsigned long WiFiConnectPostpone = 0;  // Secunds between each attempt to connect to WiFi.
+unsigned long MQTTConnectPostpone = 0;  // Secunds between each attempt to connect to MQTT.
 
-const uint16_t POLL_TIME_MS = 5000;
+const uint16_t POLL_TIME_SEC = 5;        // Secunds between each poll of channels
 
 // Create a structure for each channel on all heat controllers controlled by this project.
 struct lastKnownValue_t {
@@ -133,6 +134,10 @@ void mqttCallback(char*, byte*, unsigned int);
 void resetLastSentValues();
 void publishConfiguration(uint8_t device, uint8_t channel);
 void publish_sketch_version();
+/* Variables only used by SEC() to keep track on millis() overruns*/
+uint16_t millisOverruns = 0;
+unsigned long secLastCalledAt = 0;
+unsigned long sec();
 
 /* ########################################################################################################
  * ########################################################################################################
@@ -175,7 +180,7 @@ void setup()
  */
 void loop()
 {
-  if (WiFi.status() != WL_CONNECTED and millis() > WiFiConnectAttempt + WiFiConnectPostpone)
+  if (WiFi.status() != WL_CONNECTED and sec() > WiFiConnectAttempt + WiFiConnectPostpone)
   {
     digitalWrite(ALT_LED_BUILTIN, LOW);  // Turn ON the LED to indicate WL connections is lost.
     
@@ -185,7 +190,7 @@ void loop()
 
     if (WiFi.waitForConnectResult() != WL_CONNECTED)
     {
-      WiFiConnectAttempt = millis();
+      WiFiConnectAttempt = sec();
       WiFiConnectPostpone = WIFI_CONNECT_POSTPONE;
       return;
     } 
@@ -202,7 +207,7 @@ void loop()
     ArduinoOTA.handle();
   
     digitalWrite(ALT_LED_BUILTIN, HIGH);  // Turn the LED off to indicate WL is connected
-    if (!mqttClient.connected() and millis() > MQTTConnectAttempt + MQTTConnectPostpone )
+    if (!mqttClient.connected() and sec() > MQTTConnectAttempt + MQTTConnectPostpone )
     {
       String will = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_ONLINE);
       if (mqttClient.connect(mqttClientWithMac.c_str(), MQTT_USER.c_str(), MQTT_PASS.c_str(), will.c_str(), 1, true, "False") )
@@ -225,7 +230,7 @@ void loop()
       }
       else
       {
-        MQTTConnectAttempt = millis();
+        MQTTConnectAttempt = sec();
         MQTTConnectPostpone = MQTT_CONNECT_POSTPONE;
         return;
       }
@@ -237,8 +242,8 @@ void loop()
         return;
     }
     
-
-    if (lastUpdateTime + POLL_TIME_MS < millis())
+    // Polling all channels og all devices
+    if (lastUpdateTime + POLL_TIME_SEC < sec())
     {
       uint16_t registers[11];
       for(uint8_t device = 0; device < WavinController::NUMBER_OF_DEVICES; device++)
@@ -330,7 +335,7 @@ void loop()
           }
         }
       }
-      lastUpdateTime = millis();
+      lastUpdateTime = sec();
     }
   }
 }
@@ -731,3 +736,79 @@ void publish_sketch_version()   // Publish only once at every reboot.
 
   mqttClient.publish(versionTopic.c_str(), versionMessage.c_str(), RETAINED);
 }
+
+/*
+ * ###################################################################################################
+ *              S E C   -   S Y S T E M T I M E    I N   S E C U N D S
+ * ###################################################################################################
+ * 
+ * sec()
+ * 
+ * [Time]
+ *
+ * Description
+ * 
+ * Returns the number of secunds passed since the board began running the current program. 
+ * This number will overflow (go back to zero), after approximately 136 years.
+ * 
+ * This version is based on millis(), which overflows (go back to zero), after approximately 50 days.
+ * It requires a two global variables:
+ * - uint16_t millisOverruns: To keeb track on, how many overruns has occoured.
+ * - unsigned long secLastCalledAt: To keep track on, when an overrun has occoured.
+ * 
+ * Limitations
+ * 
+ * The function has to be called at least a couple of times, within approximately 50 days to keep track 
+ * of overruns.
+ * 
+ * Syntax
+ * 
+ * time = sec()
+ * 
+ * Parameters
+ * 
+ * None
+ * 
+ * Returns
+ * 
+ * Number of seconds passed since the program started. Data type: unsigned long.
+ * 
+ * Example Code
+ * This example code prints on the serial port the number of seconds passed since the board started running the code itself.
+
+
+unsigned long myTime;
+
+// Variables used by SEC() to keep track on millis() overruns
+uint16_t millisOverruns;
+unsigned long secLastCalledAt;
+// Fundcion definition.
+unsigned long sec();
+ 
+
+void setup() {
+  Serial.begin(9600);
+}
+
+void loop() {
+  Serial.print("Time: ");
+  unsigned long myTime = sec();
+
+  Serial.println(myTime); // prints time since program started
+  delay(1000);          // wait a second so as not to send massive amounts of data
+}
+ *
+ */
+
+unsigned long sec()
+{
+  unsigned long m = millis();
+
+  if ( m < secLastCalledAt)
+    millisOverruns++;
+
+  secLastCalledAt = m;
+
+  return (millisOverruns * (pow(2, 32) / 1000)) + ( m / 1000);
+}
+
