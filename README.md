@@ -26,7 +26,43 @@ This project takes on the challange mentioned in [Issue #3](https://github.com/d
 
 See the cloned Firmware markdown [here](Firmware/README.md).
 
-### **SOFTWARE**
+## **SOFTWARE**
+
+### Configuration
+
+src/PrivateConfig.h contains constants, that should be changed to fit your own setup.
+
+#### Notes for some of the constants:
+MODBUS_DEVICES[] 
+>This array defines the Modbus device id, for the AHC9000 Control Units, connected.<br> 
+When AHC9000 Control Units are connected together with the AHC9000 Touch Screen Display (Display), 
+then Modbus ID's are confiured by the Display.<br>
+The ID's are in binary representation starting with 0x02<br>
+Having two AHC9000 Control Units connected, the definition will be:<br>
+MODBUS_DEVICES[] = {0x02, 0x03};
+
+NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE[]
+>This is an array, definines how many AHC9000 Thermostats are connected to / monitored by each AHC9000 Control Units.<br>
+When 11 Thermostats are connected to AHC9000 Control Unit 0x02 and 4 Thermostats are connected to AHC9000 Control Unit 0x03, the definition vill be:
+NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE[] = {11, 4}
+
+ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[]
+>This array is used to define number of elements in other arrays and to find specific element in in these other arrays.<br>
+Elements in other arrays represents Thermostats connected.<br>
+The first element in this array is always zero. <br>
+The next element (the second element) is the number of Thermostats connected to the first AHC Controller. <br>
+The third element is the number of Thermostats connected to the first AHC Controller plus the number of Thermostats connected to the second AHC Controller.
+The foruth element is the number of Thermostats connected to the first AHC Controller plus the number of Thermostats connected to the second AHC Controller plus the number of Thermostats connected to the third AHC Controller.<br>
+And so on...
+The last element in this array will represent the total number of Thermostats conencted / monitored.<br>
+This way number of elements in other arrays can be defined as:<br>
+bool configurationPublished[PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]];
+Elements in an array can be found by:<br>
+configurationPublished[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel]<br>
+Where "channel" represent the Thermostat for the "device" in question.
+When 11 Thermostats are connected to AHC9000 Control Unit 0x02 and 4 Thermostats are connected to AHC9000 Control Unit 0x03, the definition vill be:
+<br>ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[] = {0,11,15}
+
 
 ### Compiling
 
@@ -116,7 +152,8 @@ docker-compose up -d
 | FW    | main.cpp            | 0.0.10 | #4: Insert WiFi reconnect postpone time <br>#5: call WiFi.disconnect() before "reconnect" (WiFi.mode(WIFI_STA) og WiFi.begin() <br>#2: Publish device info to MQTT broker
 | FW    | main.cpp            | 0.0.11 | #3: implement Arduino JSON
 | FW    | main.cpp            | 0.1.0  | #11: millis() overrun: Implementing sec() and change code from using milli seconds, to use secunds for timestamps
-| FW    | main.cpp            | 0.1.1  | #10: Scan only installed sensors
+| FW    | main.cpp            | 0.1.1  | #10: Scan only installed sensors<br>PrivateConfig.h streamlined with WavinController.h. Global constants moved into class PrivateConfig as static ...
+
 
 
 ###### "#n" Refers to github issue number

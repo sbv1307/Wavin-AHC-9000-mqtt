@@ -29,8 +29,6 @@ class WavinController
     static const uint8_t PACKED_DATA_CONFIGURATION_MODE_MANUAL = 0x00;
     static const uint8_t PACKED_DATA_CONFIGURATION_MODE_STANDBY = 0x01;
 
-    static const uint8_t  NUMBER_OF_DEVICES = 2;  
-    static const uint8_t  NUMBER_OF_CHANNELS = 16;
     static const uint8_t  CHANNELS_TIMER_EVENT = 0x00;
     static const uint16_t CHANNELS_TIMER_EVENT_OUTP_ON_MASK = 0x0010;
     static const uint8_t  CHANNELS_PRIMARY_ELEMENT = 0x02;
