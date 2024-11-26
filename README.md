@@ -153,7 +153,7 @@ docker-compose up -d
 | FW    | main.cpp            | 0.0.11 | #3: implement Arduino JSON
 | FW    | main.cpp            | 0.1.0  | #11: millis() overrun: Implementing sec() and change code from using milli seconds, to use secunds for timestamps
 | FW    | main.cpp            | 0.1.1  | #10: Scan only installed sensors<br>PrivateConfig.h streamlined with WavinController.h. Global constants moved into class PrivateConfig as static ...
-
+| FW    | main.cpp            | 0.1.2  | Tracking wavinController.readRegisters. This version publishes failed calls to readRegisters in order og verify how long it stakes before alle Thermostats are read.
 
 
 ###### "#n" Refers to github issue number

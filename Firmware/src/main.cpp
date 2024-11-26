@@ -5,7 +5,7 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.1.1"
+#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.1.2"
 
 #define ALT_LED_BUILTIN 16
 
@@ -52,7 +52,7 @@
 
 #define RETAINED true                   // Used in MQTT puplications. Can be changed during development and bugfixing.
 
-// MQTT defines
+// MQTT definitions
 // Esp8266 MAC will be added to the device name, to ensure unique topics
 // Default is topics like 'heat/floorXXXXXXXXXXXX/1/3/target', where 1 is the Modbus Device number and 3 is the output id and XXXXXXXXXXXX is the mac
 
@@ -67,6 +67,7 @@ const String   MQTT_SUFFIX_MODE_GET     = "/mode";
 const String   MQTT_SUFFIX_MODE_SET     = "/mode_set";
 const String   MQTT_SUFFIX_BATTERY      = "/battery";
 const String   MQTT_SUFFIX_OUTPUT       = "/output";
+const String   MQTT_SUFFIX_STATUS       = "/status";
 
 const String   MQTT_VALUE_MODE_STANDBY  = "off";
 const String   MQTT_VALUE_MODE_MANUAL   = "heat";
@@ -138,6 +139,7 @@ void publish_sketch_version();
 uint16_t millisOverruns = 0;
 unsigned long secLastCalledAt = 0;
 unsigned long sec();
+void publishStatus( String);
 
 /* ########################################################################################################
  * ########################################################################################################
@@ -242,7 +244,7 @@ void loop()
         return;
     }
     
-    // Polling all channels on all devices
+    // Walk through the Regsiters to poll data from each thermostat.
     if (lastUpdateTime + POLL_TIME_SEC < sec())
     {
       uint16_t registers[11];
@@ -289,6 +291,11 @@ void loop()
                 publishIfNewValue(topic, MQTT_VALUE_MODE_MANUAL, mode, &(lastSentValues[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].mode));
               }            
             }
+            else
+            {
+              String Message = String("Failed to read CATEGORY_PACKED_DATA, PACKED_DATA_CONFIGURATION for device: " + String(device)+ ". Channel: " + String(channel));
+              publishStatus( Message);
+            }
 
             // Read the current status of the output for channel
             if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_CHANNELS, channel, WavinController::CHANNELS_TIMER_EVENT, 1, registers))
@@ -303,6 +310,11 @@ void loop()
                 payload = "off";
 
               publishIfNewValue(topic, payload, status, &(lastSentValues[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].status));
+            }
+            else
+            {
+              String Message = String("Failed to read CATEGORY_CHANNELS, CHANNELS_TIMER_EVENT for device: " + String(device)+ ". Channel: " + String(channel));
+              publishStatus( Message);
             }
 
             // If a thermostat for the channel is connected to the controller
@@ -325,7 +337,21 @@ void loop()
 
                 publishIfNewValue(topic, payload, battery, &(lastSentValues[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].battery));
               }
+              else
+              {
+                String Message = String("Failed to read CATEGORY_ELEMENTS, primaryElement  for device: " + String(device)+ ". Channel: " + String(channel));
+                publishStatus( Message);
+              }
             }         
+          }
+          else
+          {
+            String Message = String("Failed to read CATEGORY_CHANNELS, CHANNELS_PRIMARY_ELEMENT for device: " + String(device)+ ". Channel: " + String(channel));
+            publishStatus( Message);
+
+            delayForOAT(250);
+
+
           }
 
           // Process incomming messages and maintain connection to the server
@@ -531,6 +557,11 @@ void readSetpoint( uint8_t device, uint8_t channel, uint16_t registers[11])
 
     publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].setpoint));
   }
+  else
+  {
+    String Message = String("Failed to read CATEGORY_PACKED_DATA, PACKED_DATA_MANUAL_TEMPERATURE for device: " + String(device)+ ". Channel: " + String(channel));
+    publishStatus( Message);
+  }
 
 
 }
@@ -586,7 +617,11 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
 
       readSetpoint( modbusDevice, id, registers);
     }
-    
+    else
+    {
+      String Message = String("Failed to read CATEGORY_CHANNELS, CHANNELS_PRIMARY_ELEMENT for device: " + String(modbusDevice)+ ". Channel: " + String(id));
+      publishStatus( Message);
+    }
   }
   else if(topicString.endsWith(MQTT_SUFFIX_MODE_SET))
   {
@@ -811,3 +846,14 @@ unsigned long sec()
   return (millisOverruns * (pow(2, 32) / 1000)) + ( m / 1000);
 }
 
+/*
+ * ###################################################################################################
+ *              P U B L I S H   S T A T U S
+ * ###################################################################################################
+ * Subscribe to: heat/+/status
+ */
+void publishStatus( String statusMessage)
+{
+  String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_SUFFIX_STATUS);
+  mqttClient.publish( topic.c_str(), statusMessage.c_str(), false);
+}
