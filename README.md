@@ -16,9 +16,11 @@ The project include a [Kicad](https://www.kicad.org/) PCB layout and a docker ba
 
 ### **History**
 
-This propject has started as a git clone of https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git but restructured for Firmware (FW), Software (SW) and Hardware (HW).
+This propject has started as a git clone of [dkjonas/Wavin-AHC-9000-mqtt](https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git) but restructured for Firmware (FW), Software (SW) and Hardware (HW).
 
 This project takes on the challange mentioned in [Issue #3](https://github.com/dkjonas/Wavin-AHC-9000-mqtt/issues/3#issuecomment-435690672)
+
+Another interesting project: [nic6911/Wavin-AHC-9000-mqtt](https://github.com/nic6911/Wavin-AHC-9000-mqtt)
 
 ##### "connect two AHC's together and control them by one display. I think this is rather unusual setup, so my code doesn't handle this case; It can only control one AHC."
 
@@ -154,7 +156,7 @@ docker-compose up -d
 | FW    | main.cpp            | 0.1.0  | #11: millis() overrun: Implementing sec() and change code from using milli seconds, to use secunds for timestamps
 | FW    | main.cpp            | 0.1.1  | #10: Scan only installed sensors<br>PrivateConfig.h streamlined with WavinController.h. Global constants moved into class PrivateConfig as static ...
 | FW    | main.cpp            | 0.1.2  | Tracking wavinController.readRegisters. This version publishes failed calls to readRegisters in order og verify how long it stakes before alle Thermostats are read.
-
+| FW    | main.cpp            | 0.1.3  | #8: Implement reading of floor temperature
 
 ###### "#n" Refers to github issue number
 

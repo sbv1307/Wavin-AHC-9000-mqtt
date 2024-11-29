@@ -5,38 +5,24 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.1.2"
+#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.1.3"
 
 #define ALT_LED_BUILTIN 16
 
 
 /*
- * ISSUES V0.0.6
- * Changing target temeratur:
- * After changing Target temperature in HA, the Target temperature in HA did not get updated.
- * Investigations indicated that the relative large number of channels being read, stressed the MOD-BUS. Adding delays between writing and reading 
- * WavinController registers seemed to solved the issue.
- *
- * OTA update:
- * The Esp8266 MQTT interface did not answer to requests.
- * It turned out, that reading all channels took longer than the defined POLL_TIME_MS = 5000 (Change to POLL_TIME SEC i ver. 0.1.0), and since lastUpdateTime were updated at the beginning
- * of the iteration, the call to ArduinoOTA.handle() were only done once on each loop!
- * Move the update of lastUpdateTime to the end, gave at least a break in scanning the cannels, however it still only gave a short window for the OTA
- * process to establish contace.
+ * This version implements Guthub issue #8: Implement reading of floor temperature.
+ * When values from the primary thermostat are read, the value for air temperature and floor temperature are returned.
+ * If the floor temperature are zero, it's assume the thermostat has no IR receiver, and the air temperature vill be shown.
  * 
- * Introducing af "delayForOAT" function, which creates a delay between writing and reading 
- * WavinController registers and calling ArduinoOTA.handle() during the delay, solved the issues of Changing target temeratur and  OTA update.
+ * publishStatus() now requires a suffix. This makes it possible to publish missages to dirrerent topics
  * 
- * ISSUES V0.0.7
- * Changing target temeratur:
- * Target temperature will get updated, but it usually takes a long time!
- * The problem is, that iterating through all channels takes quite a while, which will cause the response to a change of temperature will take a while.
- * 
- * Instead of waiting for the iteration process to finally get the target temperature changed, call the process for readng the setpont dirctly from the 
- * MQTT callback function.
- * 
+ * WarvinController.h: Only visual changes.
+ *  
  * Issues now documented on github
  * Version history documented in README.md
+ * 
+ * 
  */
 
 /*
@@ -68,6 +54,7 @@ const String   MQTT_SUFFIX_MODE_SET     = "/mode_set";
 const String   MQTT_SUFFIX_BATTERY      = "/battery";
 const String   MQTT_SUFFIX_OUTPUT       = "/output";
 const String   MQTT_SUFFIX_STATUS       = "/status";
+const String   MQTT_SUFFIX_LOG          = "/log";
 
 const String   MQTT_VALUE_MODE_STANDBY  = "off";
 const String   MQTT_VALUE_MODE_MANUAL   = "heat";
@@ -139,7 +126,7 @@ void publish_sketch_version();
 uint16_t millisOverruns = 0;
 unsigned long secLastCalledAt = 0;
 unsigned long sec();
-void publishStatus( String);
+void publishStatus( String, String);
 
 /* ########################################################################################################
  * ########################################################################################################
@@ -291,11 +278,13 @@ void loop()
                 publishIfNewValue(topic, MQTT_VALUE_MODE_MANUAL, mode, &(lastSentValues[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].mode));
               }            
             }
+            // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
             else
             {
-              String Message = String("Failed to read CATEGORY_PACKED_DATA, PACKED_DATA_CONFIGURATION for device: " + String(device)+ ". Channel: " + String(channel));
-              publishStatus( Message);
+              String Message = String("Failed to read current setpoint: CATEGORY_PACKED_DATA, PACKED_DATA_CONFIGURATION for device: " + String(device)+ ". Channel: " + String(channel));
+              publishStatus( Message, MQTT_SUFFIX_LOG);
             }
+            // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
 
             // Read the current status of the output for channel
             if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_CHANNELS, channel, WavinController::CHANNELS_TIMER_EVENT, 1, registers))
@@ -311,11 +300,13 @@ void loop()
 
               publishIfNewValue(topic, payload, status, &(lastSentValues[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].status));
             }
+            // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
             else
             {
               String Message = String("Failed to read CATEGORY_CHANNELS, CHANNELS_TIMER_EVENT for device: " + String(device)+ ". Channel: " + String(channel));
-              publishStatus( Message);
+              publishStatus( Message, MQTT_SUFFIX_LOG);
             }
+            // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
 
             // If a thermostat for the channel is connected to the controller
             if(!allThermostatsLost)
@@ -324,7 +315,16 @@ void loop()
               // Primary element from controller is returned as index+1, so 1 i subtracted here to read the correct element
               if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_ELEMENTS, primaryElement-1, 0, 11, registers))
               {
-                uint16_t temperature = registers[WavinController::ELEMENTS_AIR_TEMPERATURE];
+                uint16_t temperature = registers[WavinController::ELEMENTS_FLOOR_TEMPERATURE];
+                // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
+                String Message = String("Floor temperatur for device (" + String(device)+ ") Channel (: " +\
+                                 String(channel) + String("): ") + String(temperature)    );
+                publishStatus( Message, MQTT_SUFFIX_STATUS);
+                // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
+                if ( temperature == 0 )
+                {
+                  temperature    = registers[WavinController::ELEMENTS_AIR_TEMPERATURE];
+                }
                 uint16_t battery = registers[WavinController::ELEMENTS_BATTERY_STATUS]; // In 10% steps
 
                 String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_CURRENT);
@@ -337,22 +337,24 @@ void loop()
 
                 publishIfNewValue(topic, payload, battery, &(lastSentValues[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].battery));
               }
+              // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
               else
               {
                 String Message = String("Failed to read CATEGORY_ELEMENTS, primaryElement  for device: " + String(device)+ ". Channel: " + String(channel));
-                publishStatus( Message);
+                publishStatus( Message, MQTT_SUFFIX_LOG);
               }
+              // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
             }         
           }
           else
+          // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
           {
-            String Message = String("Failed to read CATEGORY_CHANNELS, CHANNELS_PRIMARY_ELEMENT for device: " + String(device)+ ". Channel: " + String(channel));
-            publishStatus( Message);
+            String Message = String("Failed to read primaryElement CATEGORY_CHANNELS, CHANNELS_PRIMARY_ELEMENT for device: " + String(device)+ ". Channel: " + String(channel));
+            publishStatus( Message, MQTT_SUFFIX_LOG);
 
             delayForOAT(250);
-
-
           }
+          // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
 
           // Process incomming messages and maintain connection to the server
           if(!mqttClient.loop())
@@ -557,11 +559,13 @@ void readSetpoint( uint8_t device, uint8_t channel, uint16_t registers[11])
 
     publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].setpoint));
   }
+  // ToBeRemoved >>>>>>>>>>>  B E G I N    T E S T
   else
   {
-    String Message = String("Failed to read CATEGORY_PACKED_DATA, PACKED_DATA_MANUAL_TEMPERATURE for device: " + String(device)+ ". Channel: " + String(channel));
-    publishStatus( Message);
+    String Message = String("Failed to read current setpoint: CATEGORY_PACKED_DATA, PACKED_DATA_MANUAL_TEMPERATURE for device: " + String(device)+ ". Channel: " + String(channel));
+    publishStatus( Message, MQTT_SUFFIX_LOG);
   }
+  // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
 
 
 }
@@ -601,12 +605,12 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
   if(topicString.endsWith(MQTT_SUFFIX_SETPOINT_SET))
   {
     uint16_t target = temperatureFromString(payloadString);
-    wavinController.writeRegister(
-      PrivateConfig::MODBUS_DEVICES[modbusDevice], 
-      WavinController::CATEGORY_PACKED_DATA, 
-      id, 
-      WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 
-      target);
+    wavinController.writeRegister(  PrivateConfig::MODBUS_DEVICES[modbusDevice], 
+                                    WavinController::CATEGORY_PACKED_DATA, 
+                                    id, 
+                                    WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 
+                                    target
+                                    );
 
     delayForOAT(1000);
 
@@ -620,7 +624,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     else
     {
       String Message = String("Failed to read CATEGORY_CHANNELS, CHANNELS_PRIMARY_ELEMENT for device: " + String(modbusDevice)+ ". Channel: " + String(id));
-      publishStatus( Message);
+      publishStatus( Message, MQTT_SUFFIX_LOG);
     }
   }
   else if(topicString.endsWith(MQTT_SUFFIX_MODE_SET))
@@ -851,9 +855,10 @@ unsigned long sec()
  *              P U B L I S H   S T A T U S
  * ###################################################################################################
  * Subscribe to: heat/+/status
+ * MQTT_SUFFIX_STATUS
  */
-void publishStatus( String statusMessage)
+void publishStatus( String statusMessage, String mqttSufix)
 {
-  String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_SUFFIX_STATUS);
+  String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + mqttSufix);
   mqttClient.publish( topic.c_str(), statusMessage.c_str(), false);
 }
