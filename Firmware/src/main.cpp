@@ -5,24 +5,22 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.1.3"
+#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V0.1.4"
 
 #define ALT_LED_BUILTIN 16
 
 
 /*
- * This version implements Guthub issue #8: Implement reading of floor temperature.
- * When values from the primary thermostat are read, the value for air temperature and floor temperature are returned.
- * If the floor temperature are zero, it's assume the thermostat has no IR receiver, and the air temperature vill be shown.
+ * This version post messages to MQTT, as a log for tracking the unsuccessful for calls to wavinController.readRegisters
+ * It alow implement a way to track how many of thermostats have their SETPOING read syccessfully. 
+ * SETPOINT will be used in future version, when changing operation mode will be implemented.
  * 
- * publishStatus() now requires a suffix. This makes it possible to publish missages to dirrerent topics
- * 
- * WarvinController.h: Only visual changes.
+ * The version is ment for investigating required / usefull breaks in the loop for
+ * "Walk through the Regsiters to poll data from each thermostat." 
+ * and adjust RECIEVE_TIMEOUT_MS
  *  
  * Issues now documented on github
  * Version history documented in README.md
- * 
- * 
  */
 
 /*
@@ -99,6 +97,8 @@ struct lastKnownValue_t {
 
 const uint16_t LAST_VALUE_UNKNOWN = 0xFFFF;
 
+int setpointMask[PrivateConfig::NUMBER_OF_DEVICES];
+
 bool configurationPublished[PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]];
 
 /* ########################################################################################################
@@ -120,6 +120,7 @@ void publishIfNewValue(String, String, uint16_t, uint16_t*);
 void readSetpoint( uint8_t, uint8_t, uint16_t registers[11]);
 void mqttCallback(char*, byte*, unsigned int);
 void resetLastSentValues();
+void presetBitmask();
 void publishConfiguration(uint8_t device, uint8_t channel);
 void publish_sketch_version();
 /* Variables only used by SEC() to keep track on millis() overruns*/
@@ -216,6 +217,10 @@ void loop()
 
         // Forces resending of all parameters to server
         resetLastSentValues();
+        
+        // clear bitmask for which setppoints have been updated.
+        presetBitmask();
+
       }
       else
       {
@@ -234,6 +239,8 @@ void loop()
     // Walk through the Regsiters to poll data from each thermostat.
     if (lastUpdateTime + POLL_TIME_SEC < sec())
     {
+      String Message = String("Bitmask setpointMask before: " + String(setpointMask[1], BIN) + String(setpointMask[0], BIN) + String("\n"));
+
       uint16_t registers[11];
       for(uint8_t device = 0; device < PrivateConfig::NUMBER_OF_DEVICES; device++)
       {
@@ -363,6 +370,10 @@ void loop()
           }
         }
       }
+
+      Message += String("Bitmask setpointMask After : ") + String(setpointMask[1], BIN) + String(setpointMask[0], BIN);
+      publishStatus( Message, MQTT_SUFFIX_STATUS);
+
       lastUpdateTime = sec();
     }
   }
@@ -558,6 +569,14 @@ void readSetpoint( uint8_t device, uint8_t channel, uint16_t registers[11])
     String payload = temperatureAsFloatString(setpoint);
 
     publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].setpoint));
+
+    String Message = String("Bitmask setpointMask before: " + String(setpointMask[1], BIN) + String(setpointMask[0], BIN) + String("\n"));
+
+    bitSet(setpointMask[device], channel);
+
+    Message += String("Bitmask setpointMask After : ") + String(setpointMask[1], BIN) + String(setpointMask[0], BIN);
+    
+    publishStatus( Message, MQTT_SUFFIX_STATUS);
   }
   // ToBeRemoved >>>>>>>>>>>  B E G I N    T E S T
   else
@@ -620,6 +639,10 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
       delayForOAT(1000);
 
       readSetpoint( modbusDevice, id, registers);
+
+      // clear bitmask for which setppoints have been updated.
+      presetBitmask();
+
     }
     else
     {
@@ -661,7 +684,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
  * Description: Resetting last sent values
  * Syntax: resetLastSentValues()
  * Parameters: none
- * Returns: Global variabes set to LAST_VALUE_UNKNOWN
+ * Returns: Global variabes in structure lastSentValues set to LAST_VALUE_UNKNOWN
  */
 void resetLastSentValues()
 {
@@ -677,6 +700,29 @@ void resetLastSentValues()
   }
 }
 
+/* ###################################################################################################
+ *                     P R E S E T    B I T M A S K
+ * ###################################################################################################
+ * presetBitmask()
+ * Description: Set bits in setpointMask to zero (0) for those bits, represending a Thermostat connected
+ *              to a controller. The rest (bits "represenging" none connected Thermostats) are set to one (1)
+ * Syntax: presetBitmask()
+ * Parameters: none
+ * Returns: Bits in globla variable setpointMask set.
+ */
+void presetBitmask()
+{
+  for(uint8_t modbusDevice = 0; modbusDevice < PrivateConfig::NUMBER_OF_DEVICES; modbusDevice++)
+  {
+    setpointMask[modbusDevice] = 0xFFFF;
+    for(uint8_t channel = 0; channel < PrivateConfig::NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE[modbusDevice]; channel++)
+    {
+      bitClear(setpointMask[modbusDevice], channel);
+    }
+  }
+  String Message = String("Bitmask setpointMask set to: " + String(setpointMask[1], BIN) + String(setpointMask[0], BIN));
+  publishStatus( Message, MQTT_SUFFIX_STATUS);
+}
 
 /* ###################################################################################################
  *                       P U B L I S H    C O N F I G U R A T I O N
