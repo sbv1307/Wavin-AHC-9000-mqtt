@@ -157,6 +157,8 @@ docker-compose up -d
 | FW    | main.cpp            | 0.1.1  | #10: Scan only installed sensors<br>PrivateConfig.h streamlined with WavinController.h. Global constants moved into class PrivateConfig as static ...
 | FW    | main.cpp            | 0.1.2  | Tracking wavinController.readRegisters. This version publishes failed calls to readRegisters in order og verify how long it stakes before alle Thermostats are read.
 | FW    | main.cpp            | 0.1.3  | #8: Implement reading of floor temperature
+| FW    | main.cpp            | 0.1.4  | Track unsuccessful for calls to wavinController.readRegisters
+
 
 ###### "#n" Refers to github issue number
 
