@@ -158,6 +158,7 @@ docker-compose up -d
 | FW    | main.cpp            | 0.1.2  | Tracking wavinController.readRegisters. This version publishes failed calls to readRegisters in order og verify how long it stakes before alle Thermostats are read.
 | FW    | main.cpp            | 0.1.3  | #8: Implement reading of floor temperature
 | FW    | main.cpp            | 0.1.4  | Track unsuccessful for calls to wavinController.readRegisters
+| FW    | main.cpp            | 1.0.0  | #6: Preset functionality (Holiday function, Removal of surplus heat)
 
 
 ###### "#n" Refers to github issue number
