@@ -6,14 +6,17 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V1.0.0"
+#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V1.1.0"
 
 #define ALT_LED_BUILTIN 16
 
 
 /*
- * This version implement a Preset functionality "Normal operationmode", "Holyday operationmode" and 
- * "Surplus heat operationmode".
+ * This version implement maintenance fuktionality (Github issue #9)
+ * Operation modes have been hardcoded to 4 modes: Normal, Holiday, Surplus heat and Maintenance.
+ * Since maintanance mode differes from the other modes by having a fixed setpoint, the setpoint for maintenance mode is hardcoded to 25.0 degrees.
+ * Furhermore, the setpoint for maintenance mode is not stored in EEPROM, but hardcoded in the code.
+ * In this version, the operation modes will be defined in the warvingController.h file. 
  * 
  * Issues now documented on github
  * Version history documented in README.md
@@ -67,7 +70,7 @@ const String   MQTT_OPERATIONMODE = "opmode";
 String mqttDeviceNameWithMac;
 String mqttClientWithMac;
 
-static constexpr uint8_t  ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[] = {0,11,15}; // Used to: Define number of elements in arrays
+static const     uint8_t NUMBER_OF_DEVICES = sizeof(PrivateConfig::NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE) / sizeof(uint8_t); // Do NOT Change !!!
 
 // Operating mode is controlled by the MQTT_SUFFIX_MODE_ topic.
 // When mode is set to MQTT_VALUE_MODE_MANUAL, temperature is set to the value of MQTT_SUFFIX_SETPOINT_
@@ -83,6 +86,7 @@ WiFiClient wifiClient;
 PubSubClient mqttClient(wifiClient);
 
 unsigned long lastUpdateTime = 0;       // Timestamp in Secunds when channels were read and HA updated.
+unsigned long maintenanceModeSetAt = 0; // Timestamp in Secunds when maintenance mode were set.
 
 /* Wariables to handle connect postpone */
 unsigned long WiFiConnectAttempt = 0;   // Timestamp in Secunds when an attempt to connect to WiFi were done
@@ -93,6 +97,7 @@ unsigned long MQTTConnectPostpone = 0;  // Secunds between each attempt to conne
 
 // ToBeRemoved >>>>>>>>>>>     T E S T: Set OLL_TIME_SEC = 5 after test has finished
 const uint16_t POLL_TIME_SEC = 30;        // Secunds between each poll of channels
+const uint16_t OPERATIONTIME_MAINTENANCE = 5*60; // Secunds maintenance mode will be active.
 
 // Create a structure for each channel on all heat controllers controlled by this project.
 struct lastKnownValue_t {
@@ -101,24 +106,27 @@ struct lastKnownValue_t {
   uint16_t battery;
   uint16_t status;
   uint16_t mode;
-} lastSentValues[ ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]];
+} lastSentValues[ PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]];
 
 
 struct operationMode_t {
   uint8_t structureVersion;
-  uint16_t setpoint[ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]];
-} operationModes[WavinController::NUMBER_OF_OPERATIONMODES];
+  uint16_t setpoint[ PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]];
+} operationModes[  PrivateConfig::NUMBER_OF_OPERATIONMODES];
 
 bool setpointChanged = false;
 uint8_t currentOperationmode = 0;       // 0 = Normal, 1 = Holiday, 2 = Surplus heat, 3 = Maintenance
+uint8_t previousOperationmode = 0;      // Stores the previous operation mode while running in maintenance mode.
 
 const uint16_t LAST_VALUE_UNKNOWN = 0xFFFF;
 
-int setpointMask[PrivateConfig::NUMBER_OF_DEVICES];
+const uint16_t EEPROM_START_ADDRESS = 0; //EEPROM address to start reading from
+
+int setpointMask[NUMBER_OF_DEVICES];
 
 bool changeOperationMode = false;
 bool operationModeUnavailable = true;
-bool configurationPublished[ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]];
+bool configurationPublished[ PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]];
 
 /* ########################################################################################################
  * ########################################################################################################
@@ -165,7 +173,7 @@ void setup()
   digitalWrite(ALT_LED_BUILTIN, LOW);  // Turn the LED on to indicate initialazation and not connneted for WiFi (Note that LOW is the voltage level
 
   // Get last operationmode and the setpoints for normal operationmode. 
-  int eeAddress = 0;                    //EEPROM address to start reading from
+  int eeAddress = EEPROM_START_ADDRESS;
   EEPROM.begin(512);
   EEPROM.get( eeAddress, currentOperationmode );
   EEPROM.get( eeAddress + sizeof(currentOperationmode), operationModes[0] );
@@ -178,7 +186,7 @@ void setup()
     // Normal operationmod have not beed set. Fill structure with known values.
     currentOperationmode = 0;
     operationModes[currentOperationmode].structureVersion = CONFIGURATON_VERSION;
-    for(int8_t i = 0; i < (ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]); i++)
+    for(int8_t i = 0; i < ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
     {
       operationModes[currentOperationmode].setpoint[ i] = 0;
     }
@@ -282,7 +290,7 @@ void loop()
         String Message = String(String("Current Operation mode at startup: ") + String(currentOperationmode) + String("\n") +\
                                 String("Structure version: ") + String(operationModes[currentOperationmode].structureVersion) + String("\n") +\
                                 String("Setpoints: "));
-        for(int8_t i = 0; i < (ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]); i++)
+        for(int8_t i = 0; i < ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
         {
           Message += String(operationModes[currentOperationmode].setpoint[ i]) + String(", ");
         }
@@ -318,7 +326,7 @@ void loop()
       bool allSetpointsRead = true;
 
       uint16_t registers[11];
-      for(uint8_t device = 0; device < PrivateConfig::NUMBER_OF_DEVICES; device++)
+      for(uint8_t device = 0; device < NUMBER_OF_DEVICES; device++)
       {
         for(uint8_t channel = 0; channel < PrivateConfig::NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE[device]; channel++)
         {
@@ -328,14 +336,14 @@ void loop()
             uint16_t primaryElement = registers[0] & WavinController::CHANNELS_PRIMARY_ELEMENT_ELEMENT_MASK;
             bool allThermostatsLost = registers[0] & WavinController::CHANNELS_PRIMARY_ELEMENT_ALL_TP_LOST_MASK;
 
-            if(primaryElement==0)
+            if(primaryElement == 0)
             {
                 // Channel not used
                 continue;
             }
 
             /* Publish configuration if not poblished. */
-            if(!configurationPublished[ ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
+            if(!configurationPublished[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
             {
               uint16_t standbyTemperature = STANDBY_TEMPERATURE_DEG * 10;
               wavinController.writeRegister(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, 
@@ -347,11 +355,12 @@ void loop()
 
             /*   Read and publish the current setpoint for the chanel 
              *  If successfully read, set bitmask and set flag  setpointChanged = true */
-            if ( uint16_t setPoint = readSetpoint( device, channel, registers) > 0)
+            uint16_t setPoint = readSetpoint( device, channel, registers);
+            if ( setPoint > 0)
             {
               if ( changeOperationMode )
               {
-                if ( setPoint != operationModes[currentOperationmode].setpoint[ ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
+                if ( setPoint != operationModes[currentOperationmode].setpoint[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
                 {
                   // Set new setPoint for current channel.
                   wavinController.writeRegister(  PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, 
@@ -377,9 +386,9 @@ void loop()
                 publishStatus( Message, MQTT_SUFFIX_STATUS);
                 // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
 
-                if ( setPoint != operationModes[currentOperationmode].setpoint[ ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
+                if ( setPoint != operationModes[currentOperationmode].setpoint[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
                 {
-                  operationModes[currentOperationmode].setpoint[ ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel] = setPoint;
+                  operationModes[currentOperationmode].setpoint[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel] = setPoint;
                   setpointChanged = true;
                 }
               }
@@ -395,12 +404,12 @@ void loop()
               if(mode == WavinController::PACKED_DATA_CONFIGURATION_MODE_STANDBY)
               {
                 publishIfNewValue(topic, MQTT_VALUE_MODE_STANDBY, mode, 
-                                  &(lastSentValues[ ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel].mode));
+                                  &(lastSentValues[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel].mode));
               }
               else if(mode == WavinController::PACKED_DATA_CONFIGURATION_MODE_MANUAL)
               {
                 publishIfNewValue(topic, MQTT_VALUE_MODE_MANUAL, mode, 
-                                  &(lastSentValues[ (ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].mode));
+                                  &(lastSentValues[ ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].mode));
               }            
             }
             // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
@@ -425,7 +434,7 @@ void loop()
                 payload = "off";
 
               publishIfNewValue(topic, payload, status, 
-                                &(lastSentValues[ (ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].status));
+                                &(lastSentValues[ ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].status));
             }
             // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
             else
@@ -460,12 +469,12 @@ void loop()
                 String payload = temperatureAsFloatString(temperature);
 
                 publishIfNewValue(topic, payload, temperature, 
-                                  &(lastSentValues[ (ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].temperature));
+                                  &(lastSentValues[ ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].temperature));
 
                 topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_BATTERY);
                 payload = String(battery*10);
 
-                publishIfNewValue(topic, payload, battery, &(lastSentValues[ (ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].battery));
+                publishIfNewValue(topic, payload, battery, &(lastSentValues[ ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].battery));
               }
               // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
               else
@@ -522,32 +531,42 @@ void loop()
 
       if (allSetpointsRead and setpointChanged)
       {
-        String statusMessage = String("Setpoint changed and all channels read. Save currenet operation mode.");
+        String statusMessage = String("Setpoint changed and all channels read.");
         publishStatus( statusMessage, MQTT_SUFFIX_STATUS);
-
-        //int eeAddress = 0;                    //EEPROM address to start reading from
-        EEPROM.begin(512);
-
-        // write current operation mode and setpoints to EEPROM
-        // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
-        String Message = String(String("W R I T E - Current Operation mode: ") + String(currentOperationmode) + String("\n") +\
-                                String("Structure version: ") + String(operationModes[currentOperationmode].structureVersion) + String("\n") +\
-                                String("Setpoints: "));
-        for(int8_t i = 0; i < ( ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]); i++)
+        
+        if (currentOperationmode != PrivateConfig::OPERATIONMODE_MAINTENANCE)
         {
-          Message += String(operationModes[currentOperationmode].setpoint[ i]) + String(", ");
+          //int eeAddress = EEPROM_START_ADDRESS;
+          EEPROM.begin(512);
+
+          // write current operation mode and setpoints to EEPROM
+          // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
+          String Message = String(String("W R I T E - Current Operation mode: ") + String(currentOperationmode) + String("\n") +\
+                                  String("Structure version: ") + String(operationModes[currentOperationmode].structureVersion) + String("\n") +\
+                                  String("Setpoints: "));
+          for(int8_t i = 0; i < (  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
+          {
+            Message += String(operationModes[currentOperationmode].setpoint[ i]) + String(", ");
+          }
+          publishStatus( Message, MQTT_SUFFIX_OPERATIONMODE);
+          // ToBeRemoved >>>>>>>>>>>  E N D   T E S T
+
+          //EEPROM.put( eeAddress, currentOperationmode );
+          //EEPROM.put( eeAddress + sizeof(currentOperationmode) + 
+          //            (currentOperationmode * sizeof(operationModes[currentOperationmode])), 
+          //            operationModes[currentOperationmode] );
+          //EEPROM.commit();
+          EEPROM.end();
         }
-        publishStatus( Message, MQTT_SUFFIX_OPERATIONMODE);
-        // ToBeRemoved >>>>>>>>>>>  E N D   T E S T
-
-        //EEPROM.put( eeAddress, currentOperationmode );
-        //EEPROM.put( eeAddress + sizeof(currentOperationmode) + 
-        //            (currentOperationmode * sizeof(operationModes[currentOperationmode])), 
-        //            operationModes[currentOperationmode] );
-        //EEPROM.commit();
-        EEPROM.end();
-
         setpointChanged = false;
+      }
+
+      if (currentOperationmode == PrivateConfig::OPERATIONMODE_MAINTENANCE)
+      {
+        if (maintenanceModeSetAt + OPERATIONTIME_MAINTENANCE < sec())
+        {
+          setNewOperationMode( previousOperationmode);
+        }
       }
 
 
@@ -749,7 +768,7 @@ uint16_t readSetpoint( uint8_t device, uint8_t channel, uint16_t registers[11])
     String topic = String( MQTT_PREFIX + mqttDeviceNameWithMac + "/" + device + "/" + channel + MQTT_SUFFIX_SETPOINT_GET);
     String payload = temperatureAsFloatString(setpoint);
 
-    publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ ( ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].setpoint));
+    publishIfNewValue(topic, payload, setpoint, &(lastSentValues[ (  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel].setpoint));
   }
   // ToBeRemoved >>>>>>>>>>>  B E G I N    T E S T
   else
@@ -785,7 +804,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
     if ( doc.containsKey(MQTT_OPERATIONMODE))
     {
       uint8_t newOperationMode = int(doc[MQTT_OPERATIONMODE]);
-      if ( newOperationMode >= 0 and newOperationMode < WavinController::NUMBER_OF_OPERATIONMODES)
+      if ( newOperationMode >= 0 and newOperationMode <  PrivateConfig::NUMBER_OF_OPERATIONMODES)
       {
         setNewOperationMode( newOperationMode);
       }
@@ -888,28 +907,43 @@ void setNewOperationMode( uint8_t newOperationMode)
   mqttClient.publish(switchTopic.c_str(), (const uint8_t *)"False", 5, RETAINED);
   operationModeUnavailable = true;
 
-  int eeAddress = 0;                    //EEPROM address to start reading from
-  EEPROM.begin(512);
-  EEPROM.get( eeAddress + sizeof(currentOperationmode) + (newOperationMode * sizeof(operationModes[newOperationMode])), 
-              operationModes[newOperationMode] );
-  EEPROM.end();
-
-  // Verify if operationmodes have been used at all by verifying if structure version for normal operationmode
-  // equals current CONFIGURATON_VERSION
-  if ( operationModes[newOperationMode].structureVersion != CONFIGURATON_VERSION)
+  if (newOperationMode == PrivateConfig::OPERATIONMODE_MAINTENANCE)
   {
-    // New operationmod have not beed set. Fill structure with known values from current operatino mode.
-    operationModes[newOperationMode].structureVersion = CONFIGURATON_VERSION;
-    for(int8_t i = 0; i < ( ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]); i++)
+    // Set setpoints to maintenance
+    previousOperationmode = currentOperationmode;
+    for(int8_t i = 0; i < (  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
     {
-      operationModes[newOperationMode].setpoint[ i] = operationModes[currentOperationmode].setpoint[ i];
+      operationModes[newOperationMode].setpoint[ i] = PrivateConfig::MAX_TEMP;
+    }
+    maintenanceModeSetAt = sec();
+  }
+  else
+  {
+    // Get setpoints from EEPROM
+    int eeAddress = EEPROM_START_ADDRESS;
+    EEPROM.begin(512);
+    EEPROM.get( eeAddress + sizeof(currentOperationmode) + (newOperationMode * sizeof(operationModes[newOperationMode])), 
+                operationModes[newOperationMode] );
+    EEPROM.end();
+
+    // Verify if operationmodes have been used at all by verifying if structure version for normal operationmode
+    // equals current CONFIGURATON_VERSION
+    if ( operationModes[newOperationMode].structureVersion != CONFIGURATON_VERSION)
+    {
+      // New operationmod have not beed set. Fill structure with known values from current operatino mode.
+      operationModes[newOperationMode].structureVersion = CONFIGURATON_VERSION;
+      for(int8_t i = 0; i < (  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
+      {
+        operationModes[newOperationMode].setpoint[ i] = operationModes[currentOperationmode].setpoint[ i];
+      }
     }
   }
+  
   // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
   String Message = String(String("N E W Operation mode read from EEPROM: ") + String(currentOperationmode) + String("\n") +\
                           String("Structure version: ") + String(operationModes[currentOperationmode].structureVersion) + String("\n") +\
                           String("Setpoints: "));
-  for(int8_t i = 0; i < ( ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]); i++)
+  for(int8_t i = 0; i < (  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
   {
     Message += String(operationModes[currentOperationmode].setpoint[ i]) + String(", ");
   }
@@ -934,7 +968,7 @@ void setNewOperationMode( uint8_t newOperationMode)
 void resetLastSentValues()
 {
   for(int8_t i = 0; 
-      i < ( ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[PrivateConfig::NUMBER_OF_DEVICES]); 
+      i < (  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); 
       i++)
   {
     lastSentValues[i].temperature = LAST_VALUE_UNKNOWN;
@@ -959,7 +993,7 @@ void resetLastSentValues()
  */
 void presetBitmask()
 {
-  for(uint8_t modbusDevice = 0; modbusDevice < PrivateConfig::NUMBER_OF_DEVICES; modbusDevice++)
+  for(uint8_t modbusDevice = 0; modbusDevice < NUMBER_OF_DEVICES; modbusDevice++)
   {
     setpointMask[modbusDevice] = 0xFFFF;
     for(uint8_t channel = 0; 
@@ -1002,7 +1036,7 @@ void publishConfiguration(uint8_t device, uint8_t channel)
 
   uint8_t device_channel = (device * 100) + channel;
 
-  String room = String(PrivateConfig::ROOMS[( ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel]);
+  String room = String(PrivateConfig::ROOMS[(  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel]);
   
   climateDoc["name"] = room;
   climateDoc["unique_id"] = String(mqttDeviceNameWithMac + "_" + device + "_" + channel +  "_climate_id");
@@ -1050,7 +1084,7 @@ void publishConfiguration(uint8_t device, uint8_t channel)
   
   mqttClient.publish(sensorTopic.c_str(), payload, sensorlength, RETAINED);
   
-  configurationPublished[ ( ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel] = true;
+  configurationPublished[ (  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel] = true;
 }
 
 /* ###################################################################################################
@@ -1190,14 +1224,14 @@ void puplishOperationmodeConfiguration()
   Doc["command_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_SUFFIX_CONFIG);
   
   Doc["command_template"] = String( "{\"" + MQTT_OPERATIONMODE + "\": \"" +\
-                            String("{{ this.attributes.options.index(value) }}") +  "\" }"),
+                            String("{{ this.attributes.options.index(value) }}") +  "\" }");
   
-  Doc["options"][0] = String("Normal operation");
-  Doc["options"][1] = String("Holiday operation");
-  Doc["options"][2] = String("Surplus heat operation");
-  Doc["options"][3] = String("Maintenance operation");
-
-  Doc["state_topic"] = String(MQTT_DISCOVERY_PREFIX + MQTT_COMPONENT_SELECT + MQTT_PREFIX_DEVICE + "/state");;
+  for (uint8_t ii = 0; ii <  PrivateConfig::NUMBER_OF_OPERATIONMODES; ii++)
+  {
+    Doc["options"][ii] = String(  PrivateConfig::NAME_OF_OPERATIONMODES[ii]);
+  }
+  
+  Doc["state_topic"] = String(MQTT_DISCOVERY_PREFIX + MQTT_COMPONENT_SELECT + MQTT_PREFIX_DEVICE + "/state");
   Doc["value_template"] = String("{{ this.attributes.options[(value | int)] }}");
   
   Doc["availability_topic"] = String(MQTT_PREFIX + mqttDeviceNameWithMac + MQTT_SUFFIX_CONFIG + MQTT_ONLINE);

@@ -34,9 +34,6 @@ class WavinController
     static const uint8_t  CHANNELS_PRIMARY_ELEMENT                  = 0x02;
     static const uint16_t CHANNELS_PRIMARY_ELEMENT_ELEMENT_MASK     = 0x003f;
     static const uint16_t CHANNELS_PRIMARY_ELEMENT_ALL_TP_LOST_MASK = 0x0400;
-    
-    static const uint8_t  NUMBER_OF_OPERATIONMODES = 4;  // 0 = Normal, 1 = Holiday, 2 = Surplus heat, 3 = Maintenance
-
    
   private:
     uint8_t      txEnablePin;
