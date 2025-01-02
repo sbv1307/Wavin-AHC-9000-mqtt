@@ -6,17 +6,15 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V1.1.0"
+#define SKTECH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - TEST1.0.0"
 
 #define ALT_LED_BUILTIN 16
 
 
 /*
- * This version implement maintenance fuktionality (Github issue #9)
- * Operation modes have been hardcoded to 4 modes: Normal, Holiday, Surplus heat and Maintenance.
- * Since maintanance mode differes from the other modes by having a fixed setpoint, the setpoint for maintenance mode is hardcoded to 25.0 degrees.
- * Furhermore, the setpoint for maintenance mode is not stored in EEPROM, but hardcoded in the code.
- * In this version, the operation modes will be defined in the warvingController.h file. 
+ * This version is build to test the implementation of operation modes.
+ * Basically the WarvinController.cpp will be changed so connection to the AHC 9000 controller is not required.
+ * Step 1: Modify wavinController.readRegisters to return true and set 
  * 
  * Issues now documented on github
  * Version history documented in README.md
@@ -42,6 +40,7 @@
 // Default is topics like 'heat/floorXXXXXXXXXXXX/1/3/target', where 1 is the Modbus Device number and 3 is the output id and XXXXXXXXXXXX is the mac
 
 const String   MQTT_PREFIX              = "heat/";       // include tailing '/' in prefix
+const String   MQTT_STATUS_PREFIX        = "status/";
 const String   MQTT_DEVICE_NAME         = "floor";       // only alfanumeric and no '/'
 const String   MQTT_ONLINE              = "/online";      
 const String   MQTT_DISCOVERY_PREFIX    = "homeassistant/";       // include tailing '/' in discovery prefix!
@@ -60,6 +59,9 @@ const String   MQTT_SUFFIX_STATUS       = "/status";
 const String   MQTT_SUFFIX_LOG          = "/log";
 const String   MQTT_SUFFIX_TRACE        = "/trace";
 const String   MQTT_SUFFIX_OPERATIONMODE = "/operationmode";
+const String   MQTT_SUFFIX_DEBUG        = "/debug";
+const String   MQTT_SUFFIX_BREAKPOINT    = "/breakpoint";
+
 
 const String   MQTT_VALUE_MODE_STANDBY  = "off";
 const String   MQTT_VALUE_MODE_MANUAL   = "heat";
@@ -78,7 +80,7 @@ static const     uint8_t NUMBER_OF_DEVICES = sizeof(PrivateConfig::NUMBER_OF_CHA
 const float STANDBY_TEMPERATURE_DEG = 5.0;
 
 const uint8_t TX_ENABLE_PIN = 5;
-const bool SWAP_SERIAL_PINS = true;
+const bool SWAP_SERIAL_PINS = false;
 const uint16_t RECIEVE_TIMEOUT_MS = 1000;
 WavinController wavinController(TX_ENABLE_PIN, SWAP_SERIAL_PINS, RECIEVE_TIMEOUT_MS);
 
@@ -87,6 +89,8 @@ PubSubClient mqttClient(wifiClient);
 
 unsigned long lastUpdateTime = 0;       // Timestamp in Secunds when channels were read and HA updated.
 unsigned long maintenanceModeSetAt = 0; // Timestamp in Secunds when maintenance mode were set.
+unsigned long setpointChangedAt = 0;
+
 
 /* Wariables to handle connect postpone */
 unsigned long WiFiConnectAttempt = 0;   // Timestamp in Secunds when an attempt to connect to WiFi were done
@@ -96,8 +100,8 @@ unsigned long WiFiConnectPostpone = 0;  // Secunds between each attempt to conne
 unsigned long MQTTConnectPostpone = 0;  // Secunds between each attempt to connect to MQTT.
 
 // ToBeRemoved >>>>>>>>>>>     T E S T: Set OLL_TIME_SEC = 5 after test has finished
-const uint16_t POLL_TIME_SEC = 30;        // Secunds between each poll of channels
-const uint16_t OPERATIONTIME_MAINTENANCE = 5*60; // Secunds maintenance mode will be active.
+const uint16_t POLL_TIME_SEC = 1;        // Secunds between each poll of channels
+const uint16_t OPERATIONTIME_MAINTENANCE = 5; // Secunds maintenance mode will be active.
 
 // Create a structure for each channel on all heat controllers controlled by this project.
 struct lastKnownValue_t {
@@ -127,7 +131,11 @@ int setpointMask[NUMBER_OF_DEVICES];
 bool changeOperationMode = false;
 bool operationModeUnavailable = true;
 bool configurationPublished[ PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]];
+bool updateEEPROM = false;
 
+bool waitOnMqttMessage = false;
+bool continueOperationMode = true;
+const String   CONTINUE_MAINTANENCE   = "stop";
 /* ########################################################################################################
  * ########################################################################################################
  * ########################################################################################################
@@ -158,6 +166,8 @@ void setNewOperationMode( uint8_t );
 uint16_t millisOverruns = 0;
 unsigned long secLastCalledAt = 0;
 unsigned long sec();
+
+void breakpoint ( String);
 
 /* ########################################################################################################
  * ########################################################################################################
@@ -258,6 +268,11 @@ void loop()
         MQTTConnectAttempt = 0;
         MQTTConnectPostpone = 0;
 
+        String debugTopic   = String(MQTT_STATUS_PREFIX + mqttDeviceNameWithMac + MQTT_SUFFIX_DEBUG);
+        mqttClient.subscribe(debugTopic.c_str(), 1);
+
+        breakpoint( String("Connected to MQTT broker: ") + String(PrivateConfig::MQTT_SERVER.c_str()) + String(" as: ") + String(mqttClientWithMac.c_str()));
+
         // When connected to MQTT borker, publish: Sketch version, SSID connected, IP address and current operation mode.
         publish_sketch_version();
 
@@ -301,9 +316,6 @@ void loop()
         /* Forces resending of all parameters to server */
         resetLastSentValues();
         
-        /* clear bitmask for which setppoints have been updated. */
-        presetBitmask();
-
       }
       else
       {
@@ -322,6 +334,9 @@ void loop()
     /* Walk through the Regsiters to poll data from each thermostat. */
     if (lastUpdateTime + POLL_TIME_SEC < sec())
     {
+      /* clear bitmask for which setppoints have been updated. */
+      presetBitmask();
+
       String Message = String("Bitmask setpointMask before: " + String(setpointMask[0], BIN) + String(setpointMask[1], BIN) + String("\n"));
       bool allSetpointsRead = true;
 
@@ -330,9 +345,20 @@ void loop()
       {
         for(uint8_t channel = 0; channel < PrivateConfig::NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE[device]; channel++)
         {
-          if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_CHANNELS, 
-              channel, WavinController::CHANNELS_PRIMARY_ELEMENT, 1, registers))
+          if ( wavinController.readRegisters( PrivateConfig::MODBUS_DEVICES[device], 
+                                              WavinController::CATEGORY_CHANNELS,
+                                              channel, 
+                                              WavinController::CHANNELS_PRIMARY_ELEMENT, 
+                                              1, 
+                                              registers
+                                            )
+             )
           {
+
+            if (registers[0] != 0x0001)
+              breakpoint( String("#1 Primary element for device: " + String(device) + String(" Channel: ") +\
+                          String(channel) + String(" :") + String(registers[0], HEX)));
+
             uint16_t primaryElement = registers[0] & WavinController::CHANNELS_PRIMARY_ELEMENT_ELEMENT_MASK;
             bool allThermostatsLost = registers[0] & WavinController::CHANNELS_PRIMARY_ELEMENT_ALL_TP_LOST_MASK;
 
@@ -346,8 +372,17 @@ void loop()
             if(!configurationPublished[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
             {
               uint16_t standbyTemperature = STANDBY_TEMPERATURE_DEG * 10;
-              wavinController.writeRegister(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, 
-                                            channel, WavinController::PACKED_DATA_STANDBY_TEMPERATURE, standbyTemperature);
+              wavinController.writeRegister(  PrivateConfig::MODBUS_DEVICES[device], 
+                                              WavinController::CATEGORY_PACKED_DATA, 
+                                              channel, 
+                                              WavinController::PACKED_DATA_STANDBY_TEMPERATURE, 
+                                              standbyTemperature
+                                              );
+              /*
+              breakpoint( String("#2 Standby temperature for device: " + String(device) + String(" Channel: ") +\
+                          String(channel) + String(" set to:") + String(standbyTemperature)));
+              */
+
               publishConfiguration(device, channel);
             }
 
@@ -356,15 +391,32 @@ void loop()
             /*   Read and publish the current setpoint for the chanel 
              *  If successfully read, set bitmask and set flag  setpointChanged = true */
             uint16_t setPoint = readSetpoint( device, channel, registers);
-            if ( setPoint > 0)
+
+            if (setPoint != 50)
+            {
+              breakpoint( String("#3 Setpoint for device: " + String(device) + String(" Channel: ") +\
+                          String(channel) + String(" read to:") + String( setPoint)));
+            }
+
+            if ( setPoint >= 0)
             {
               if ( changeOperationMode )
               {
-                if ( setPoint != operationModes[currentOperationmode].setpoint[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
+                if ( setPoint != operationModes[currentOperationmode].setpoint[ PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
                 {
+                  breakpoint( String("#4 Setpointfor device: " + String(device) + String(" Channel: ") +\
+                                      String(channel) + String(" changed from: ") +\
+                                      String(operationModes[currentOperationmode].setpoint[ PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel]) +\
+                                      String(" to: ") + String( setPoint)
+                                      )
+                            );
                   // Set new setPoint for current channel.
-                  wavinController.writeRegister(  PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, 
-                                                  channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, setPoint );
+                  wavinController.writeRegister(  PrivateConfig::MODBUS_DEVICES[device], 
+                                                  WavinController::CATEGORY_PACKED_DATA, 
+                                                  channel, 
+                                                  WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 
+                                                  setPoint 
+                                                  );
                   setpointChanged = true;
                 }
                 else
@@ -375,28 +427,38 @@ void loop()
               else
               {
                 // ToBeRemoved >>>>>>>>>>>  B E G I N    T E S T
-                String Message = String("Bitmask setpointMask before: " + String(setpointMask[1], BIN) + String(setpointMask[0], BIN) + String("\n"));
+                String Message = String("Bitmask setpointMask before: " + String(setpointMask[1], BIN) + String(setpointMask[0], BIN) +\
+                                        String(" setpoint changed flag:") + String(setpointChanged) + String("\n"));
                 // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
 
                 bitSet(setpointMask[device], channel);
-
-                // ToBeRemoved >>>>>>>>>>>  B E G I N    T E S T
-                Message += String("Bitmask setpointMask After : ") + String(setpointMask[1], BIN) + String(setpointMask[0], BIN);
-                
-                publishStatus( Message, MQTT_SUFFIX_STATUS);
-                // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
-
                 if ( setPoint != operationModes[currentOperationmode].setpoint[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
                 {
                   operationModes[currentOperationmode].setpoint[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel] = setPoint;
                   setpointChanged = true;
                 }
+
+                // ToBeRemoved >>>>>>>>>>>  B E G I N    T E S T
+                Message += String("Bitmask setpointMask After : ") + String(setpointMask[1], BIN) + String(setpointMask[0], BIN) +\
+                                   String(" setpoint changed flag:") + String(setpointChanged);
+                
+                publishStatus( Message, MQTT_SUFFIX_STATUS);
+                // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
+
+                if ( setPoint != 50)
+                  breakpoint( String("#5 setpoint mask updated for device: " + String(device) + " channel: " + String(channel)));
               }
             }
 
             /* Read the current mode for the channel */
-            if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, 
-                                              channel, WavinController::PACKED_DATA_CONFIGURATION, 1, registers))
+            if  (wavinController.readRegisters(  PrivateConfig::MODBUS_DEVICES[device], 
+                                                WavinController::CATEGORY_PACKED_DATA, 
+                                                channel, 
+                                                WavinController::PACKED_DATA_CONFIGURATION, 
+                                                1, 
+                                                registers
+                                              )
+                )
             {
               uint16_t mode = registers[0] & WavinController::PACKED_DATA_CONFIGURATION_MODE_MASK; 
 
@@ -415,14 +477,21 @@ void loop()
             // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
             else
             {
-              String Message = String("Failed to read current setpoint: CATEGORY_PACKED_DATA, PACKED_DATA_CONFIGURATION for device: " + 
+              String Message = String("Failed to read current mode: CATEGORY_PACKED_DATA, PACKED_DATA_CONFIGURATION for device: " + 
                                       String(device)+ ". Channel: " + String(channel));
               publishStatus( Message, MQTT_SUFFIX_LOG);
             }
             // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
 
             // Read the current status of the output for channel
-            if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_CHANNELS, channel, WavinController::CHANNELS_TIMER_EVENT, 1, registers))
+            if  ( wavinController.readRegisters(  PrivateConfig::MODBUS_DEVICES[device], 
+                                                  WavinController::CATEGORY_CHANNELS, 
+                                                  channel, 
+                                                  WavinController::CHANNELS_TIMER_EVENT, 
+                                                  1, 
+                                                  registers
+                                                )
+                )
             {
               uint16_t status = registers[0] & WavinController::CHANNELS_TIMER_EVENT_OUTP_ON_MASK;
 
@@ -439,7 +508,7 @@ void loop()
             // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
             else
             {
-              String Message = String("Failed to read CATEGORY_CHANNELS, CHANNELS_TIMER_EVENT for device: " +\
+              String Message = String("Failed to read status CATEGORY_CHANNELS, CHANNELS_TIMER_EVENT for device: " +\
                                String(device)+ ". Channel: " + String(channel));
               publishStatus( Message, MQTT_SUFFIX_LOG);
             }
@@ -450,14 +519,23 @@ void loop()
             {
               // Read values from the primary thermostat connected to this channel 
               // Primary element from controller is returned as index+1, so 1 i subtracted here to read the correct element
-              if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[device], 
-                  WavinController::CATEGORY_ELEMENTS, primaryElement-1, 0, 11, registers))
+              if ( wavinController.readRegisters( PrivateConfig::MODBUS_DEVICES[device], 
+                                                  WavinController::CATEGORY_ELEMENTS, 
+                                                  primaryElement-1, 
+                                                  0, 
+                                                  11, 
+                                                  registers
+                                                )
+                 )
               {
                 uint16_t temperature = registers[WavinController::ELEMENTS_FLOOR_TEMPERATURE];
                 // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
-                String Message = String("Floor temperatur for device (" + String(device)+ ") Channel (: " +\
-                                 String(channel) + String("): ") + String(temperature)    );
-                publishStatus( Message, MQTT_SUFFIX_STATUS);
+                if (temperature != 0)
+                {
+                  String Message = String("Floor temperatur for device (" + String(device)+ ") Channel (: " +\
+                                   String(channel) + String("): ") + String(temperature)    );
+                  publishStatus( Message, MQTT_SUFFIX_STATUS);
+                }
                 // ToBeRemoved <<<<<<<<<<<  E N D   T E S T
                 if ( temperature == 0 )
                 {
@@ -500,16 +578,27 @@ void loop()
           {
               return;     // Exit loop to attempt reconnection, if connections has gone lost
           }
-
-          if (setpointMask[device] != 0b1111111111111111 )
-          {
-            allSetpointsRead = false;
-          }
+          //breakpoint( String( String("#6 Data for devce: ") + String(device) + " channel: " + String(channel) + " read."));
         }
+
+        
+
+        if (setpointMask[device] != 0b1111111111111111 )
+        {
+          allSetpointsRead = false;
+          breakpoint( String( String("#7 Not ll channels for device: ") + String(device) + "were read !!!\nSetpoint mask: ") + String(setpointMask[device], BIN));
+        }
+        delay(2000);
       }
 
       Message += String("Bitmask setpointMask After : ") + String(setpointMask[0], BIN) + String(setpointMask[1], BIN);
       publishStatus( Message, MQTT_SUFFIX_STATUS);
+
+      
+      /*
+      breakpoint( String( String("#8 All setpoints read.\nallSetpointsRead falg: ") + String(allSetpointsRead) +\
+                          String("\noperationModeUnavailable flag: ") + String(operationModeUnavailable)));
+      */
 
       /* Make operationmode switch available and publish current state when all setpoints have been read*/
       if (allSetpointsRead and operationModeUnavailable)
@@ -527,7 +616,16 @@ void loop()
         operationModeUnavailable = false;
         changeOperationMode = false;          // Switch from change operation mode to normal operation mode.
 
+        /*
+        breakpoint( String("#9 All Setpoints Read and operation Mode Unavailable. Make switch available."));
+        */
+
       }
+
+      /*
+      breakpoint( String( String("#10 allSetpointsRead flag: ") + String(allSetpointsRead) +\
+                          String("\nsetpointChanged flag: ") + String(setpointChanged)));
+      */
 
       if (allSetpointsRead and setpointChanged)
       {
@@ -536,33 +634,56 @@ void loop()
         
         if (currentOperationmode != PrivateConfig::OPERATIONMODE_MAINTENANCE)
         {
-          //int eeAddress = EEPROM_START_ADDRESS;
-          EEPROM.begin(512);
-
-          // write current operation mode and setpoints to EEPROM
-          // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
-          String Message = String(String("W R I T E - Current Operation mode: ") + String(currentOperationmode) + String("\n") +\
-                                  String("Structure version: ") + String(operationModes[currentOperationmode].structureVersion) + String("\n") +\
-                                  String("Setpoints: "));
-          for(int8_t i = 0; i < (  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
-          {
-            Message += String(operationModes[currentOperationmode].setpoint[ i]) + String(", ");
-          }
-          publishStatus( Message, MQTT_SUFFIX_OPERATIONMODE);
-          // ToBeRemoved >>>>>>>>>>>  E N D   T E S T
-
-          //EEPROM.put( eeAddress, currentOperationmode );
-          //EEPROM.put( eeAddress + sizeof(currentOperationmode) + 
-          //            (currentOperationmode * sizeof(operationModes[currentOperationmode])), 
-          //            operationModes[currentOperationmode] );
-          //EEPROM.commit();
-          EEPROM.end();
+          updateEEPROM = true;
+          setpointChangedAt = sec();
+        }
+        else
+        {
+          breakpoint( String("#12 Setpoint changed and all channels read. No writes to EEPROM - Running in Maintanence mode."));
         }
         setpointChanged = false;
       }
 
+      if ( updateEEPROM and setpointChangedAt + 60 < sec() )
+      {
+
+        //int eeAddress = EEPROM_START_ADDRESS;
+        EEPROM.begin(512);
+
+        // write current operation mode and setpoints to EEPROM
+        // ToBeRemoved >>>>>>>>>>>  B E G I N   T E S T
+        String Message = String(String("W R I T E - Current Operation mode: ") + String(currentOperationmode) + String("\n") +\
+                                String("Structure version: ") + String(operationModes[currentOperationmode].structureVersion) + String("\n") +\
+                                String("Setpoints: "));
+        for(int8_t i = 0; i < (  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
+        {
+          Message += String(operationModes[currentOperationmode].setpoint[ i]) + String(", ");
+        }
+        publishStatus( Message, MQTT_SUFFIX_OPERATIONMODE);
+        // ToBeRemoved >>>>>>>>>>>  E N D   T E S T
+
+        //EEPROM.put( eeAddress, currentOperationmode );
+        //EEPROM.put( eeAddress + sizeof(currentOperationmode) + 
+        //            (currentOperationmode * sizeof(operationModes[currentOperationmode])), 
+        //            operationModes[currentOperationmode] );
+        //EEPROM.commit();
+        EEPROM.end();
+
+        updateEEPROM = false;
+
+        breakpoint( String("#11 Setpoint changed and all channels read. Write to EEPROM."));
+      }
+
       if (currentOperationmode == PrivateConfig::OPERATIONMODE_MAINTENANCE)
       {
+        breakpoint( String("#13 Running in maintenance mode.\nPublish stop to debug topic to switch to preivious operation mode."));
+        if ( continueOperationMode )
+        {
+          maintenanceModeSetAt = sec();
+        }
+        else
+          continueOperationMode = true;
+        
         if (maintenanceModeSetAt + OPERATIONTIME_MAINTENANCE < sec())
         {
           setNewOperationMode( previousOperationmode);
@@ -761,7 +882,8 @@ uint16_t readSetpoint( uint8_t device, uint8_t channel, uint16_t registers[11])
 {
   uint16_t setpoint = 0;
 
-  if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 1, registers))
+  if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[device], WavinController::CATEGORY_PACKED_DATA, 
+                                    channel, WavinController::PACKED_DATA_MANUAL_TEMPERATURE, 1, registers))
   {
     setpoint = registers[0];
     
@@ -810,7 +932,24 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
       }
     }
   }
-  else
+  else if ( topicString.startsWith(MQTT_STATUS_PREFIX) and topicString.endsWith(MQTT_SUFFIX_DEBUG))
+  {
+    char terminatedPayload[length+1];
+    for(unsigned int i=0; i<length; i++)
+    {
+      terminatedPayload[i] = payload[i];
+    }
+    terminatedPayload[length] = 0;
+    String payloadString = String(terminatedPayload);
+
+    if (payloadString == CONTINUE_MAINTANENCE)
+    {
+      continueOperationMode = false;
+    }
+
+    waitOnMqttMessage = false;
+  }
+  else 
   {
 
     char terminatedPayload[length+1];
@@ -842,9 +981,14 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
       delayForOAT(1000);
 
       uint16_t registers[11];
-      if (wavinController.readRegisters(PrivateConfig::MODBUS_DEVICES[modbusDevice], 
-          WavinController::CATEGORY_CHANNELS, channel, 
-          WavinController::CHANNELS_PRIMARY_ELEMENT, 1, registers))
+      if ( wavinController.readRegisters( PrivateConfig::MODBUS_DEVICES[modbusDevice], 
+                                          WavinController::CATEGORY_CHANNELS, 
+                                          channel, 
+                                          WavinController::CHANNELS_PRIMARY_ELEMENT, 
+                                          1, 
+                                          registers
+                                        )
+         )
       {
         delayForOAT(1000);
 
@@ -1253,6 +1397,31 @@ void puplishOperationmodeConfiguration()
  */
 void publishStatus( String statusMessage, String mqttSufix)
 {
-  String topic = String(MQTT_PREFIX + mqttDeviceNameWithMac + mqttSufix);
+  String topic = String(MQTT_STATUS_PREFIX + mqttDeviceNameWithMac + mqttSufix);
   mqttClient.publish( topic.c_str(), statusMessage.c_str(), false);
+}
+
+/*
+ * ###################################################################################################
+ *             B R E A K P O I N T
+ * ###################################################################################################
+ * publish anything to MQTT topic: heat/<mqttDeviceNameWithMac>/debug
+ * 
+ * 
+ */
+
+void breakpoint ( String message)
+{
+  waitOnMqttMessage = true;
+  publishStatus( message, MQTT_SUFFIX_BREAKPOINT);
+
+  while(waitOnMqttMessage)
+  {
+    digitalWrite(ALT_LED_BUILTIN, LOW);
+    mqttClient.loop();
+    ArduinoOTA.handle();
+    delay(100);
+    digitalWrite(ALT_LED_BUILTIN, HIGH);
+    delay(250);
+  }
 }

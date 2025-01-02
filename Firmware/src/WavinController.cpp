@@ -1,6 +1,7 @@
 #include <ESP8266WiFi.h>
 #include "WavinController.h"
 
+uint16_t setpoint_temp[16] = {50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50, 50};
 
 WavinController::WavinController(uint8_t pin, bool swapSerialPins, uint16_t timeout_ms)
 {
@@ -104,6 +105,31 @@ bool WavinController::readRegisters(uint8_t modbusDevice, uint8_t category, uint
   message[4] = page;
   message[5] = count;
 
+  if ( category == WavinController::CATEGORY_CHANNELS and index == WavinController::CHANNELS_PRIMARY_ELEMENT)
+  {
+    reply[0] = 0x0001;
+  }
+  else if ( category == WavinController::CATEGORY_PACKED_DATA and index == WavinController::PACKED_DATA_MANUAL_TEMPERATURE)
+  {
+    reply[0] = 200 + index;
+    if ( modbusDevice == 0x02 )
+    {
+      reply[0] = setpoint_temp[page];
+    }
+    else if ( modbusDevice == 0x03 )
+    {
+      reply[0] = setpoint_temp[ 11 + page];
+    }
+  }
+  else if ( category == WavinController::CATEGORY_CHANNELS and index == WavinController::CHANNELS_TIMER_EVENT)
+  {
+    reply[0] = WavinController::CHANNELS_TIMER_EVENT_OUTP_ON_MASK;
+  }
+  else
+  {
+    reply[0] = 0x0000;
+  }
+/*
   uint16_t crc = calculateCRC(message, 6);
 
   message[6] = crc & 0xFF;
@@ -112,6 +138,8 @@ bool WavinController::readRegisters(uint8_t modbusDevice, uint8_t category, uint
   transmit(message, 8);
 
   return recieve(reply, modbusDevice, MODBUS_READ_REGISTER);
+*/
+  return true;
 }
 
 
@@ -127,7 +155,7 @@ bool WavinController::writeRegister(uint8_t modbusDevice, uint8_t category, uint
   message[5] = 1;
   message[6] = value >> 8;
   message[7] = value & 0xFF;
-
+  /*
   uint16_t crc = calculateCRC(message, 8);
 
   message[8] = crc & 0xFF;
@@ -137,6 +165,20 @@ bool WavinController::writeRegister(uint8_t modbusDevice, uint8_t category, uint
 
   uint16_t reply[1];
   return recieve(reply, modbusDevice, MODBUS_WRITE_REGISTER); // Recieve reply but ignore it. Asume it's ok
+  */
+  if ( category == WavinController::CATEGORY_PACKED_DATA and index == WavinController::PACKED_DATA_MANUAL_TEMPERATURE)
+  {
+    if ( modbusDevice == 0x02 )
+    {
+      setpoint_temp[page] = value;
+    }
+    else if ( modbusDevice == 0x03 )
+    {
+      setpoint_temp[ 11 + page] = value;
+    }
+  }
+
+return true;
 }
 
 bool WavinController::writeMaskedRegister(uint8_t modbusDevice, uint8_t category, uint8_t page, uint8_t index, uint16_t value, uint16_t mask)
