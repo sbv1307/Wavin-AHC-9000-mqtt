@@ -160,6 +160,8 @@ docker-compose up -d
 | FW    | main.cpp            | 0.1.4  | Track unsuccessful for calls to wavinController.readRegisters
 | FW    | main.cpp            | 1.0.0  | #6: Preset functionality (Holiday function, Removal of surplus heat)
 | FW    | main.cpp            | 1.1.0  | #9 Implement Maintenance fuktionality 
+| FW    | main.cpp            | 1.2.0  | Setpoints 
+
 
 
 ###### "#n" Refers to github issue number
