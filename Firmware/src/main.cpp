@@ -6,7 +6,7 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKETCH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V1.2.3-2.1"
+#define SKETCH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V1.2.3"
 
 #define ALT_LED_BUILTIN 16
 
@@ -158,11 +158,7 @@ void setNewOperationMode( uint8_t );
 uint16_t millisOverruns = 0;
 unsigned long secLastCalledAt = 0;
 unsigned long sec();
-
-/* TO BE DELETED after debugging 
-vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
 void publishStatus( String );
-/*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
 
 /* ########################################################################################################
  * ########################################################################################################
@@ -300,20 +296,6 @@ void loop()
         mqttClient.publish(switchTopic.c_str(), (const uint8_t *)"False", 5, RETAINED);
         operationModeUnavailable = true;
 
-        /* TO BE DELETED after debugging 
-        vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
-        String Message = String("Initial configuration:\nOperation mode: " + String(currentOperationmode) + 
-                                ". (" + String(  PrivateConfig::NAME_OF_OPERATION_MODES[currentOperationmode]) + 
-                                ")\nStructure version: " + String(operationModes[currentOperationmode].structureVersion) +
-                                "\nSetpoints: ");
-        for(int8_t i = 0; i < ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
-        {
-          Message += String(String(operationModes[currentOperationmode].setpoint[ i] / 10.0) + ", ");
-        }
-                            
-        publishStatus( Message);
-        /*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
-
         /* Forces resending of all parameters to server */
         resetLastSentValues();
         
@@ -349,8 +331,6 @@ void loop()
                 !(changeOperationMode || setpointChanged)
              )
           {
-            
-            /*vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
             if ( wavinController.readRegisters( PrivateConfig::MODBUS_DEVICES[device], 
                                                 WavinController::CATEGORY_CHANNELS,
                                                 channel,
@@ -393,13 +373,7 @@ void loop()
                 {
                   if ( setPoint != operationModes[currentOperationmode].setpoint[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel])
                   {
-                    /* TO BE DELETED after debugging 
-                    vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
-                    String Message = String("In changeOperationMode: Setting setpoint for device: " + String(device) + ". Channel: " + String(channel) +
-                                          " from: " + String(setPoint / 10.0) + " to: " + String(operationModes[currentOperationmode].setpoint[  PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device] + channel] / 10.0));  
-                    publishStatus( Message);
-                    /*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
-      
+                    delayForOAT(125);
                     // Set new setPoint for current channel.
                     wavinController.writeRegister(  PrivateConfig::MODBUS_DEVICES[device], 
                                                     WavinController::CATEGORY_PACKED_DATA, 
@@ -411,27 +385,17 @@ void loop()
                   }
                   else
                   {
-                    /* TO BE DELETED after debugging 
-                    vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
-                    //if ( bitRead(setpointMask[device], channel) == 0 )
-                    //{
-                    //  String Message = String("In changeOperationMode: Setpoint for device: " + String(device)+ ". Channel: " + String(channel) + " is already set to: " + String(setPoint / 10.0));
-                    //  publishStatus( Message);
-                    //}
-                    /*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
                     if ( bitRead(setpointMask[device], channel) == 0 )
                     {
                       numberOfThermostatsRead++;
                       bitSet(setpointMask[device], channel);
                     }
-                    /* TO BE DELETED after debugging 
-                    vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
-
                     if ( numberOfThermostatsRead != PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES])
                     {
-                      String Message = String("In Change Operation mode:\n" + String(numberOfThermostatsRead) +" ud af " + 
-                                            String(PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]) + 
-                                            " Termostater aflæst. Setpoint mask for device: " + String(device) + ": " + String(setpointMask[device], BIN));
+                      String Message = String("Change Operation mode to: " + String(PrivateConfig::NAME_OF_OPERATION_MODES[currentOperationmode]) +  
+                                              "\n" + String(numberOfThermostatsRead) +" ud af " + 
+                                              String(PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]) + 
+                                              " Termostater aflæst. Setpoint mask for device: " + String(device) + ": " + String(setpointMask[device], BIN));
                       publishStatus( Message);
                     } else
                     {
@@ -440,7 +404,6 @@ void loop()
                                             " Setpoint mask for device: " + String(device) + ": " + String(setpointMask[device], BIN));
                       publishStatus( Message);
                     }
-                    /*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
                   }
                 }
                 else
@@ -466,22 +429,25 @@ void loop()
                   {
                     numberOfThermostatsRead++;
                     bitSet(setpointMask[device], channel);
-                  }  
-                  if ( numberOfThermostatsRead != PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES])
-                  {
-                    String Message = String("In normal Operation mode:\n" + String(numberOfThermostatsRead) +" ud af " + 
-                                          String(PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]) + 
-                                          " Termostater aflæst. Setpoint mask for devide: " + String(device) + ": " + String(setpointMask[device], BIN));
-                    publishStatus( Message);
-
-                  } else
-                  {
-                    
-                    String Message = String("In normal Operation mode:\nAlle " + String(PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]) + " termostater aflæst." +
-                                          " Setpoint mask for devide: " + String(device) + ": " + String(setpointMask[device], BIN));
-                    publishStatus( Message);
                   }
-                  
+                  if ( setpointChanged)
+                  {
+                    if ( numberOfThermostatsRead != PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES])
+                    {
+                      String Message = String("Update setpoints:\n" + String(numberOfThermostatsRead) +" ud af " + 
+                                            String(PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]) + 
+                                            " Termostater aflæst. Setpoint mask for devide: " + String(device) + ": " + String(setpointMask[device], BIN));
+                      publishStatus( Message);
+  
+                    } else
+                    {
+                      
+                      String Message = String("Update setpoints::\nAlle " + String(PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]) + " termostater aflæst." +
+                                            " Setpoint mask for devide: " + String(device) + ": " + String(setpointMask[device], BIN));
+                      publishStatus( Message);
+                    }
+
+                  }
                 }
               }
 
@@ -578,8 +544,6 @@ void loop()
                 return;     // Exit loop to attempt reconnection, if connections has gone lost
             }
           }
-
-          /*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
         }
 
         if (setpointMask[device] != 0b1111111111111111 )
@@ -610,19 +574,6 @@ void loop()
         
         if (currentOperationmode != PrivateConfig::OPERATION_MODE_MAINTENANCE)
         {
-          /* TO BE DELETED after debugging 
-          vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
-          String Message = String("Storing new configuration to EEPROM:\nOperation mode: " + String(currentOperationmode) + 
-                                  ". (" + String(  PrivateConfig::NAME_OF_OPERATION_MODES[currentOperationmode]) + 
-                                  ")\nStructure version: " + String(operationModes[currentOperationmode].structureVersion) +
-                                  "\nSetpoints: ");
-          for(int8_t i = 0; i < ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
-          {
-            Message += String(String(operationModes[currentOperationmode].setpoint[ i] / 10.0) + ", ");
-          }
-                              
-          publishStatus( Message);
-
           // write current operation mode and setpoints to EEPROM
 
           int eeAddress = EEPROM_START_ADDRESS;
@@ -916,10 +867,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
         operationModeUnavailable = true;
       }
       uint16_t target = temperatureFromString(payloadString);
-
-      String Message = String("In MQTT Call back: Write " + String(target) +" to Register"); 
-      publishStatus( Message);
-
       wavinController.writeRegister(  PrivateConfig::MODBUS_DEVICES[modbusDevice], 
                                       WavinController::CATEGORY_PACKED_DATA, 
                                       channel, 
@@ -941,11 +888,6 @@ void mqttCallback(char* topic, byte* payload, unsigned int length)
           )
       {
         delayForOAT(1000);
-
-        String Message = String("In MQTT Call back: Registers read "); 
-        publishStatus( Message);
-  
-  
         readSetpoint( modbusDevice, channel, registers);
 
         // clear bitmask for which setpoints have been updated.
