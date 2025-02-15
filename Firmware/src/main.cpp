@@ -6,7 +6,7 @@
 #include "WavinController.h"
 #include "PrivateConfig.h"
 
-#define SKETCH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V1.2.3-1"
+#define SKETCH_VERSION "Esp8266 MQTT Wavin AHC 9000 interface - V1.2.3-2.1"
 
 #define ALT_LED_BUILTIN 16
 
@@ -1012,21 +1012,6 @@ void setNewOperationMode( uint8_t newOperationMode)
   }
   else
   {
-    /* TO BE DELETED after debugging 
-    vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
-    String Message = String("Setting new operation mode\n Current configuration:\nOperation mode: " + String(currentOperationmode) + 
-                            ". (" + String(  PrivateConfig::NAME_OF_OPERATION_MODES[currentOperationmode]) + 
-                            ")\nStructure version: " + String(operationModes[currentOperationmode].structureVersion) +
-                            "\nSetpoints: ");
-    for(int8_t i = 0; i < ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
-    {
-      Message += String(String(operationModes[currentOperationmode].setpoint[ i] / 10.0) + ", ");
-    }
-                        
-    publishStatus( Message);
-    /*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
-
-
     // Get setpoints from EEPROM
     int eeAddress = EEPROM_START_ADDRESS;
     EEPROM.begin(512);
@@ -1053,23 +1038,6 @@ void setNewOperationMode( uint8_t newOperationMode)
   currentOperationmode = newOperationMode;
   presetBitmask();
   publish_sketch_version();
-
-  /* TO BE DELETED after debugging 
-  vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv*/
-  String Message = String("New configuration:\nOperation mode: " + String(currentOperationmode) + 
-                          ". (" + String(  PrivateConfig::NAME_OF_OPERATION_MODES[currentOperationmode]) + 
-                          ")\nStructure version: " + String(operationModes[currentOperationmode].structureVersion) +
-                          "\nSetpoints: ");
-  for(int8_t i = 0; i < ( PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[NUMBER_OF_DEVICES]); i++)
-  {
-    Message += String(String(operationModes[currentOperationmode].setpoint[ i] / 10.0) + ", ");
-  }
-                      
-  publishStatus( Message);
-  /*^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^*/
-
-
-
 }
 
 /* ###################################################################################################
