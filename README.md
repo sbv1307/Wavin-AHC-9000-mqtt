@@ -207,6 +207,8 @@ docker-compose up -d
 | FW    | main.cpp            | 1.1.0  | #9 Implement Maintenance fuktionality 
 | FW    | main.cpp            | 1.2.0  | Setpoints 
 | FW    | main.cpp            | 1.2.1  | Setpoints bugfixes.
+| FW    | main.cpp            | 1.2.3  | #12 Set temperature not change, when changing operation mode 
+
 
 
 
