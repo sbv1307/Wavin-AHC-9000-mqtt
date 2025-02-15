@@ -1,28 +1,55 @@
 # **Wavin-AHC-9000-mqtt**
 
 
-A Esp8266 mqtt interface for more Wavin AHC-9000 controllers connected together and controlled by one Wavin display.
+A Esp8266 mqtt interface for more Wavin AHC-9000 controllers connected together, configured and controlled by one Wavin display.
 
-The goal is to be able to control the Wavin AHC 9000 heating controllers from [Home Assistant](https://www.home-assistant.io/) (HA), and still be able to use the Wavin display as well.
+The goal is to be able to control the Wavin AHC 9000 heating controllers from [Home Assistant](https://www.home-assistant.io/) (HA), and still be able to use the Wavin display as well. However MODBUS specifications does not allow more than one master. The Wavin display will not be working together with the Esp8266 mqtt interface, at the same tine, in the current version. The current solution is to use a 4 poles toggle switch, to manually switch between the Esp8266 mqtt interface and the Wavin display.
 
-The origilan goal of being able to controle the Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org/), has been abandoned because I gave up finding a discovery function for MQTT integrations, like the one in HA.
+The original goal of being able to control the Wavin AHC 9000 heating controllers from [OpenHAP](https://www.openhab.org/), has been abandoned because I gave up finding a discovery function for MQTT integrations, like the one in HA.
+
+### **Operation**
+
+The Esp8266 mqtt interface is generally operated from [HA](https://www.home-assistant.io/). When started, it will publish a configuration for each thermostat connected to a MQTT Broker, from where HA will pickup the configurations.
+
+Besides controlling the single thermostat from HA, the Esp8266 mqtt interface provide a MQTT switch for HA named "Wavin interface operation mode", which provide an easy way to change the setpoints for all thermostats connected. Currently four operations modes are configured in the PrivateConfig.h file:
+  
+0. Normal operation
+1. Holiday operation
+2. Surplus heat operation
+3. Maintenance operation**
+
+These operations modes can also be selected by publishing a [JSON](https://en.wikipedia.org/wiki/JSON) to:
+````bash
+heat/floorE8DB84E05CC8/config
+
+````
+Publish the following JSON will set the operation mode to **Holiday operation**
+````bash
+{
+  "opmode": "1"
+}
+````
+
+**Maintenance operation:** This operation mode will set the setpoint temperature for all thermostats to maximum temperature (MAX_TEMP) and run in this mode for a period of time, and then return to previous operation mode. All parameters are defined in PrivateConfig.h
 
 ### **Current project status**
-In the current version, the Esp8266 mqtt interface will controle one or more Wavin AHC-9000 controllers. The Wavin AHC-9000 controllers are initial installed and configured using the Wavin display, which configures each controller's MOC-BUS device number.
 
-Because the MODBUS specifications does not allow more than one master, the Wavin display will not be working together with the Esp8266 mqtt interface in the current version. Investigations will be done to verify if it will be possible to build a solution, using a 2 Circuit IC Switch [CD4052B](https://www.ti.com/product/CD4052B-MIL#tech-docs) to controle which controller (Wavin display or Esp8266) will be in action.
+The Wavin AHC-9000 controllers are initial installed and configured using the Wavin display, which configures each controller's MOC-BUS device number.
 
-The project include a [Kicad](https://www.kicad.org/) PCB layout and a docker based mosquitto broker based on [eclipse-mosquitto](https://hub.docker.com/_/eclipse-mosquitto).
+Future solution might be to use a 2 Circuit IC Switch [CD4052B](https://www.ti.com/product/CD4052B-MIL#tech-docs), managed by the Esp8266 mqtt interface, to control which controller (Wavin display or Esp8266) will be in action.
+
 
 ### **History**
 
-This propject has started as a git clone of [dkjonas/Wavin-AHC-9000-mqtt](https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git) but restructured for Firmware (FW), Software (SW) and Hardware (HW).
+This project has started as a git clone of [dkjonas/Wavin-AHC-9000-mqtt](https://github.com/dkjonas/Wavin-AHC-9000-mqtt.git) but restructured for Firmware (FW), Software (SW) and Hardware (HW).
 
-This project takes on the challange mentioned in [Issue #3](https://github.com/dkjonas/Wavin-AHC-9000-mqtt/issues/3#issuecomment-435690672)
+This project takes on the challenge mentioned in [Issue #3](https://github.com/dkjonas/Wavin-AHC-9000-mqtt/issues/3#issuecomment-435690672)
+
+##### "connect two AHC's together and control them by one display. I think this is rather unusual setup, so my code doesn't handle this case; It can only control one AHC."
+
 
 Another interesting project: [nic6911/Wavin-AHC-9000-mqtt](https://github.com/nic6911/Wavin-AHC-9000-mqtt)
 
-##### "connect two AHC's together and control them by one display. I think this is rather unusual setup, so my code doesn't handle this case; It can only control one AHC."
 
 ## **Esp8266 mqtt interface**
 
@@ -38,15 +65,19 @@ src/PrivateConfig.h contains constants, that should be changed to fit your own s
 MODBUS_DEVICES[] 
 >This array defines the Modbus device id, for the AHC9000 Control Units, connected.<br> 
 When AHC9000 Control Units are connected together with the AHC9000 Touch Screen Display (Display), 
-then Modbus ID's are confiured by the Display.<br>
+then Modbus ID's are configured by the Display.<br>
 The ID's are in binary representation starting with 0x02<br>
-Having two AHC9000 Control Units connected, the definition will be:<br>
+Having two AHC9000 Control Units connected, the definition will be:
+````bash
 MODBUS_DEVICES[] = {0x02, 0x03};
+````
 
 NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE[]
->This is an array, definines how many AHC9000 Thermostats are connected to / monitored by each AHC9000 Control Units.<br>
+>This is an array, defines how many AHC9000 Thermostats are connected to / monitored by each AHC9000 Control Units.<br>
 When 11 Thermostats are connected to AHC9000 Control Unit 0x02 and 4 Thermostats are connected to AHC9000 Control Unit 0x03, the definition vill be:
+````bash
 NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE[] = {11, 4}
+````
 
 ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[]
 >This array is used to define number of elements in other arrays and to find specific element in in these other arrays.<br>
@@ -63,11 +94,25 @@ Elements in an array can be found by:<br>
 configurationPublished[ (PrivateConfig::ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[device]) + channel]<br>
 Where "channel" represent the Thermostat for the "device" in question.
 When 11 Thermostats are connected to AHC9000 Control Unit 0x02 and 4 Thermostats are connected to AHC9000 Control Unit 0x03, the definition vill be:
-<br>ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[] = {0,11,15}
-
+````bash
+ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[] = {0,11,15}
+````
 
 ### Compiling
 
+The sketch use [PubSubClient](https://docs.arduino.cc/libraries/pubsubclient/)2.6 and [ArduinoJson](https://github.com/bblanchon/ArduinoJson/releases)7.0.1. Add the following to the plarform.ini file.
+````bash
+lib_deps =
+  PubSubClient@2.6
+  bblanchon/ArduinoJson@7.0.1
+````
+
+Larger buffer is needed for HomeAssistant discovery messages, which are quite large.
+
+Add the following to the plarform.ini file.
+````bash
+build_flags = -D MQTT_MAX_PACKET_SIZE=1024
+````
 Over The Air update (OTA) is implemented in main.cpp. 
 
 Compiled with [PlatformIO](https://platformio.org/) installed in VS Code and adding the follow to platformio.ini the code will provide the possability of setting PlatformIO Project Environment to   `env:nodemcu_ota` and upload will happen OTA.

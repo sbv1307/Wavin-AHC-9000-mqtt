@@ -11,10 +11,9 @@ class PrivateConfig
         inline static const String   MQTT_PASS   = "Enter mqtt password here";       // mqtt password. Use "" for no password
         inline static const uint16_t MQTT_PORT   = 1883;                             // mqtt port (Default 1883)
         
-        static constexpr uint8_t MODBUS_DEVICES[] = {0x02, 0x03, 0x03 ...};
-        static constexpr uint8_t NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE[] = {11, 4}; // See README.md for details
-        static const     uint8_t NUMBER_OF_DEVICES = sizeof(NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE) / sizeof(uint8_t); // Do NOT Change !!!
-
+        static constexpr uint8_t MODBUS_DEVICES[] = {0x02, 0x03, 0x03 ...};             // See README.md for details
+        static constexpr uint8_t NUMBER_OF_CHANNELS_MONITORED_PER_DEVICE[] = {11, 4};   // See README.md for details
+        
         static constexpr uint8_t  ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[] = {0,11,15}; // See README.md for details
 
         static constexpr float    MIN_TEMP    = 6.0;                              // minimum temperature to set
@@ -39,3 +38,16 @@ class PrivateConfig
            (char*) "Enter room name here",      // Name for the room at device 1 chanel 2
            (char*) "Enter room name here"       // Name for the room at device 1 chanel 3
         };                                      // Name for the room at device 2 chanel 0      <<== ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[2] = 15
+        static constexpr uint8_t  ELEMENT_OFFSET_ON_ROOMS_FOR_DEVICE[] = {0,11,15}; // See README.md for details. Used to: Define number of elements in arrays
+    
+        static const uint8_t  NUMBER_OF_OPERATIONMODES = 4;     // Set number of operations modes. E.g.: 0 = Normal, 1 = Holiday, 2 = Surplus heat, 3 = Maintenance
+        static const uint8_t  OPERATIONMODE_MAINTENANCE = 3;    // Defindes which mode is maintenance mode. This operation mode set setpoint for all thermostats to MAX_TEMP
+        static const uint8_t  OPERATIONTIME_MAINTENANCE = 5*60; // Defindes how many seconds maintenance mode will be active, before returning to previous operation mode.
+
+
+        inline static char * NAME_OF_OPERATIONMODES[] = {
+                (char*) "Normal operation", 
+                (char*) "Holiday operation",
+                (char*) "Surplus heat operation",
+                (char*) "Maintenance operation"
+        };
