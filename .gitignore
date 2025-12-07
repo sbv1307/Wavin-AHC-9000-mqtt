@@ -4,6 +4,8 @@ Firmware/.vscode/*
 Firmware/lib/*
 Firmware/.travis.yml
 Firmware/.pio/*
+Hardware/Gerbers.zip
+Hardware/library
 
 
 Developer/*

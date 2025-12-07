@@ -60,16 +60,8 @@
       ],
       "drc_exclusions": [
         [
-          "shorting_items|171958000|74041000|1a8617b9-f5e8-4a95-95e7-5e6440dc7b0f|a36f7b25-856e-48a2-bc6e-f95c28542fdc",
-          ""
-        ],
-        [
-          "shorting_items|171958000|92583000|8d5b52fa-e081-4bab-9d7c-f3c131471814|c748597a-6e4a-4e6d-8aba-68e3b8d28409",
-          ""
-        ],
-        [
-          "starved_thermal|125526700|69557500|f5e73a93-ac4d-43f8-9a5b-98b2daf127e6|0dbc4819-a5f3-4159-ad9b-555a72e6ae4e|F.Cu",
-          ""
+          "starved_thermal|127940000|113020000|f9c6a2c5-9229-4f94-a53f-b1e331ae56b4|68bedb50-36eb-4394-9657-338720f88cbe|F.Cu",
+          "The NodeMCU component has several GND connection"
         ]
       ],
       "meta": {
@@ -517,13 +509,27 @@
         "microvia_diameter": 0.3,
         "microvia_drill": 0.1,
         "name": "Power",
-        "pcb_color": "rgba(0, 0, 0, 0.000)",
-        "priority": 0,
+        "pcb_color": "rgb(255, 2, 9)",
+        "priority": 1,
         "schematic_color": "rgba(0, 0, 0, 0.000)",
-        "track_width": 0.45,
+        "track_width": 0.5,
         "via_diameter": 0.8,
         "via_drill": 0.4,
         "wire_width": 6
+      },
+      {
+        "clearance": 0.25,
+        "diff_pair_gap": 0.25,
+        "diff_pair_width": 0.2,
+        "microvia_diameter": 0.3,
+        "microvia_drill": 0.1,
+        "name": "VCC",
+        "pcb_color": "rgb(255, 136, 31)",
+        "priority": 0,
+        "schematic_color": "rgba(0, 0, 0, 0.000)",
+        "track_width": 0.5,
+        "via_diameter": 0.8,
+        "via_drill": 0.4
       }
     ],
     "meta": {
@@ -591,6 +597,10 @@
       {
         "netclass": "Power",
         "pattern": "GND"
+      },
+      {
+        "netclass": "VCC",
+        "pattern": "VCC"
       }
     ]
   },
@@ -599,7 +609,7 @@
       "gencad": "",
       "idf": "",
       "netlist": "",
-      "plot": "",
+      "plot": "Gerbers",
       "pos_files": "",
       "specctra_dsn": "",
       "step": "",
